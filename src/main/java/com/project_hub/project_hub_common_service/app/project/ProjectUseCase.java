@@ -1,10 +1,13 @@
 package com.project_hub.project_hub_common_service.app.project;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.project_hub.project_hub_common_service.app.project.dtos.req.CreateProjectRequest;
-import com.project_hub.project_hub_common_service.app.project.dtos.res.CreateProjectResponse;
 import com.project_hub.project_hub_common_service.app.token.TokenRepository;
+
+import io.grpc.StatusRuntimeException;
 
 @Service
 public class ProjectUseCase {
@@ -19,24 +22,20 @@ public class ProjectUseCase {
     }
 
     
-    public CreateProjectResponse create(CreateProjectRequest request, String authorizationHeader) {
-        var validateTokenResponse = tokenRepository.validateToken(authorizationHeader);
+    public Project create(CreateProjectRequest request, String authorizationHeader) {
+            var validateTokenResponse = tokenRepository.validateToken(authorizationHeader);
 
-        String userId = validateTokenResponse.getId();
+            String userId = validateTokenResponse.getId();
 
-        Project project = Project.builder()
-            .name(request.getName())
-            .description(request.getDescription())
-            .creatorId(userId)
-            .build();
+            Project project = Project.builder()
+                .name(request.getName())
+                .description(request.getDescription())
+                .creatorId(userId)
+                .build();
 
-        Project saved = projectRepository.save(project);
+            Project saved  = projectRepository.save(project);
 
-        return CreateProjectResponse.builder()
-            .id(saved.getId())
-            .name(saved.getName())
-            .build();
-    }
-    
+            return saved ;
+    }    
 }
 

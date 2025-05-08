@@ -1,5 +1,6 @@
 package com.project_hub.project_hub_common_service.app.project;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -18,11 +19,13 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 public class Project {
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     private String name;
+
     private String description;
 
     @NotBlank(message = "Creator ID must not be blank")

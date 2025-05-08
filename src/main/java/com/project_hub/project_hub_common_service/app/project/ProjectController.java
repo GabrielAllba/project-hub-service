@@ -9,8 +9,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.project_hub.project_hub_common_service.apiresponse.ApiResponse;
 import com.project_hub.project_hub_common_service.app.project.dtos.req.CreateProjectRequest;
-import com.project_hub.project_hub_common_service.app.project.dtos.res.CreateProjectResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -31,10 +31,18 @@ public class ProjectController {
 
     @PostMapping
     @Operation(summary = "Create a new project")
-    public ResponseEntity<CreateProjectResponse> createProject(
-        @RequestHeader("Authorization") String authorizationHeader,
-        @Validated @RequestBody CreateProjectRequest dto) {
+    public ResponseEntity<ApiResponse<Project>> createProject(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @Validated @RequestBody CreateProjectRequest dto) {
 
-        return ResponseEntity.ok(projectUseCase.create(dto, authorizationHeader));
+        Project project = projectUseCase.create(dto, authorizationHeader);
+
+        ApiResponse<Project> response = new ApiResponse<>(
+            "success",
+            "Project created successfully",
+            project
+        );
+
+        return ResponseEntity.ok(response);
     }
 }
