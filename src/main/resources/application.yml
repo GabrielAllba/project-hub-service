@@ -1,0 +1,11 @@
+server:
+  port: 8080
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /api/swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true

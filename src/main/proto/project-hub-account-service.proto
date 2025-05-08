@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package projecthubaccount;
+
+service ProjectHubAccountService {
+  rpc ValidateToken (ValidateTokenRequest) returns (ValidateTokenResponse){}
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  string id = 1;
+  string email = 2;
+  string username = 3;
+  bool isEmailVerified = 4; 
+}
