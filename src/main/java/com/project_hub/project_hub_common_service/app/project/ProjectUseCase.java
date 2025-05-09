@@ -17,7 +17,7 @@ public class ProjectUseCase {
     }
 
     
-    public Project create(CreateProjectRequest request, String authorizationHeader) {
+    public Project create(CreateProjectRequest request) {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             String userId = authentication.getPrincipal().toString();
             

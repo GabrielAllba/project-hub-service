@@ -31,17 +31,13 @@ public class ProjectController {
 
     @PostMapping
     @Operation(summary = "Create a new project")
-    public ResponseEntity<BaseResponse<Project>> createProject(
-            @RequestHeader("Authorization") String authorizationHeader,
-            @Validated @RequestBody CreateProjectRequest dto) {
-
-        Project project = projectUseCase.create(dto, authorizationHeader);
+    public ResponseEntity<BaseResponse<Project>> createProject(@Validated @RequestBody CreateProjectRequest dto) {
+        Project project = projectUseCase.create(dto);
 
         BaseResponse<Project> response = new BaseResponse<>(
-            "success",
-            "Project created successfully",
-            project
-        );
+                "success",
+                "Project created successfully",
+                project);
 
         return ResponseEntity.ok(response);
     }
