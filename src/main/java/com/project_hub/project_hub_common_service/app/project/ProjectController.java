@@ -9,8 +9,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.project_hub.project_hub_common_service.apiresponse.ApiResponse;
 import com.project_hub.project_hub_common_service.app.project.dtos.req.CreateProjectRequest;
+import com.project_hub.project_hub_common_service.misc.ApiResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
