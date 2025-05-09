@@ -3,19 +3,16 @@ package com.project_hub.project_hub_common_service.security;
 import java.io.IOException;
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project_hub.project_hub_common_service.infrastructure.grpc.ProjectHubAccountServiceGrpcClient;
-import com.project_hub.project_hub_common_service.misc.ApiResponse;
+import com.project_hub.project_hub_common_service.misc.BaseResponse;
 
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import io.grpc.StatusRuntimeException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -26,10 +23,10 @@ import projecthubaccount.ProjectHubAccountServiceOuterClass.ValidateTokenRespons
 @Component
 public class AuthenticationFilter extends OncePerRequestFilter {
 
-    private final ProjectHubAccountServiceGrpcClient grpcClient;
+    private final ProjectHubAccountServiceGrpcClient projectHubAccountServiceGrpcClient;
 
     public AuthenticationFilter(ProjectHubAccountServiceGrpcClient grpcClient) {
-        this.grpcClient = grpcClient;
+        this.projectHubAccountServiceGrpcClient = grpcClient;
     }
 
     @Override
@@ -45,9 +42,9 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         String token = authHeader;
 
         try {
-            ValidateTokenResponse validateResponse = grpcClient.validate(token);
+            ValidateTokenResponse validateResponse = projectHubAccountServiceGrpcClient.validate(token);
 
-            String userId = validateResponse.getId(); 
+            String userId = validateResponse.getId();
 
             if (userId == null || userId.isEmpty()) {
                 writeErrorResponse(response, HttpStatus.UNAUTHORIZED, "Invalid token: userId missing");
@@ -60,17 +57,23 @@ public class AuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
             filterChain.doFilter(request, response);
-        }catch (StatusRuntimeException e) {
-            if (e.getStatus().getCode().name().equals("UNAUTHENTICATED")) {
-                writeErrorResponse(response, HttpStatus.UNAUTHORIZED, "Token tidak valid atau sudah kedaluwarsa.");
-            } else if (e.getStatus().getCode().name().equals("UNAVAILABLE")) {
-                writeErrorResponse(response, HttpStatus.SERVICE_UNAVAILABLE, "Layanan otentikasi sedang tidak tersedia.");
+        } catch (StatusRuntimeException e) {
+            if (e.getStatus().getCode().name().equals("UNAVAILABLE")) {
+                writeErrorResponse(response, HttpStatus.SERVICE_UNAVAILABLE,
+                        "Layanan otentikasi sedang tidak tersedia.");
             } else {
-                writeErrorResponse(response, HttpStatus.INTERNAL_SERVER_ERROR, "Terjadi kesalahan autentikasi: " + e.getMessage());
+                writeErrorResponse(response, HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Terjadi kesalahan autentikasi: " + e.getMessage());
             }
         } catch (Exception e) {
             writeErrorResponse(response, HttpStatus.INTERNAL_SERVER_ERROR, "Kesalahan internal: " + e.getMessage());
         }
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        return path.startsWith("/api/swagger-ui") || path.startsWith("/v3/api-docs");
     }
 
     private void writeErrorResponse(HttpServletResponse response, HttpStatus status, String message)
@@ -78,7 +81,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         response.setStatus(status.value());
         response.setContentType("application/json");
 
-        ApiResponse<Object> apiResponse = new ApiResponse<>(String.valueOf(status.value()), message, null);
+        BaseResponse<Object> apiResponse = new BaseResponse<>(String.valueOf(status.value()), message, null);
 
         ObjectMapper mapper = new ObjectMapper();
         response.getWriter().write(mapper.writeValueAsString(apiResponse));

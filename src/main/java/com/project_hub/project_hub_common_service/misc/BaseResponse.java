@@ -5,7 +5,7 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class ApiResponse<T> {
+public class BaseResponse<T> {
 
     private String status;
 
@@ -13,7 +13,7 @@ public class ApiResponse<T> {
 
     private T data;
 
-    public ApiResponse(String status, String message, T data) {
+    public BaseResponse(String status, String message, T data) {
         this.status = status;
         this.message = message;
         this.data = data;

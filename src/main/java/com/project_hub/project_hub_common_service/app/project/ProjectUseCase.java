@@ -5,7 +5,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.project_hub.project_hub_common_service.app.project.dtos.req.CreateProjectRequest;
-import com.project_hub.project_hub_common_service.app.token.TokenRepository;
 
 @Service
 public class ProjectUseCase {
@@ -13,7 +12,7 @@ public class ProjectUseCase {
     private final ProjectRepository projectRepository;
 
 
-    public ProjectUseCase(ProjectRepository projectRepository, TokenRepository tokenRepository) {
+    public ProjectUseCase(ProjectRepository projectRepository) {
         this.projectRepository = projectRepository;
     }
 
@@ -21,7 +20,6 @@ public class ProjectUseCase {
     public Project create(CreateProjectRequest request, String authorizationHeader) {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             String userId = authentication.getPrincipal().toString();
-
             
             Project project = Project.builder()
             .name(request.getName())

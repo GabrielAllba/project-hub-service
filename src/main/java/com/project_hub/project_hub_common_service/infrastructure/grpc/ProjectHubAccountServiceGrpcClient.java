@@ -17,9 +17,9 @@ public class ProjectHubAccountServiceGrpcClient {
 
     public ValidateTokenResponse validate(String token) {
         ValidateTokenRequest request = ValidateTokenRequest.newBuilder()
-            .setToken(token)
-            .build();
-
-        return stub.validateToken(request);
+                .setToken(token)
+                .build();
+        ValidateTokenResponse response = stub.validateToken(request);
+        return response;
     }
 }
