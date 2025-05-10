@@ -76,8 +76,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         return path.startsWith("/api/swagger-ui") || path.startsWith("/v3/api-docs");
     }
 
-    private void writeErrorResponse(HttpServletResponse response, HttpStatus status, String message)
-            throws IOException {
+    private void writeErrorResponse(HttpServletResponse response, HttpStatus status, String message) throws IOException {
         response.setStatus(status.value());
         response.setContentType("application/json");
 
