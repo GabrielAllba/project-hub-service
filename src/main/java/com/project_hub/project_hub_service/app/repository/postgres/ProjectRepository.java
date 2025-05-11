@@ -1,4 +1,4 @@
-package com.project_hub.project_hub_service.app.repository;
+package com.project_hub.project_hub_service.app.repository.postgres;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;

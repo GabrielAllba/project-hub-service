@@ -16,6 +16,8 @@ import com.project_hub.project_hub_service.app.repository.gRpc.AuthenticationGrp
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectMemberRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectRepository;
 
+import authenticationservice.AuthenticationServiceOuterClass.FindUserResponse;
+
 @Service
 public class ProjectUseCase {
 
@@ -23,8 +25,8 @@ public class ProjectUseCase {
     private final ProjectMemberRepository projectMemberRepository;
     private final AuthenticationGrpcRepository authenticationGrpcRepository;
 
-    
-    public ProjectUseCase( AuthenticationGrpcRepository authenticationGrpcRepository, ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository) {
+    public ProjectUseCase(AuthenticationGrpcRepository authenticationGrpcRepository,
+            ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository) {
         this.authenticationGrpcRepository = authenticationGrpcRepository;
         this.projectRepository = projectRepository;
         this.projectMemberRepository = projectMemberRepository;
@@ -56,12 +58,24 @@ public class ProjectUseCase {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the project creator can add members");
         }
 
+        if (requesterId.equals(request.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The creator already associated with the member");
+        }
+
+        FindUserResponse user;
+        try {
+            user = authenticationGrpcRepository.findUser(request.getUserId());
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User with id " +request.getUserId() + " not found");
+        }
+
         ProjectMember member = ProjectMember.builder()
                 .project(project)
-                .userId(request.getUserId())
+                .userId(user.getId())
                 .invitedAt(LocalDateTime.now())
                 .build();
 
         return projectMemberRepository.save(member);
+
     }
 }

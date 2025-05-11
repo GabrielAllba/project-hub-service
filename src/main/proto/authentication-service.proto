@@ -4,6 +4,7 @@ package authenticationservice;
 
 service AuthenticationService {
   rpc ValidateToken (ValidateTokenRequest) returns (ValidateTokenResponse){}
+  rpc FindUser (FindUserRequest) returns (FindUserResponse){}
 }
 
 message ValidateTokenRequest {
@@ -12,6 +13,15 @@ message ValidateTokenRequest {
 
 message ValidateTokenResponse {
   string userId = 1;
+  string email = 2;
+  string username = 3;
+  bool isEmailVerified = 4; 
+}
+message FindUserRequest {
+  string id = 1;
+}
+message FindUserResponse {
+  string id = 1;
   string email = 2;
   string username = 3;
   bool isEmailVerified = 4; 

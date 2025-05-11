@@ -4,6 +4,7 @@ import org.springframework.stereotype.Repository;
 
 import com.project_hub.project_hub_service.infrastructure.grpc.AuthenticationServiceGrpcClient;
 
+import authenticationservice.AuthenticationServiceOuterClass.FindUserResponse;
 import authenticationservice.AuthenticationServiceOuterClass.ValidateTokenResponse;
 
 @Repository
@@ -18,5 +19,9 @@ public class AuthenticationGrpcRepository {
 
      public ValidateTokenResponse validateToken(String token) {
         return grpcClient.validate(token);
+    }
+    
+     public FindUserResponse findUser(String id) {
+        return grpcClient.findUser(id);
     }
 }
