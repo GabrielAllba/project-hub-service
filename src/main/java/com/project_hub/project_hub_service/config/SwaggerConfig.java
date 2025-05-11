@@ -1,4 +1,4 @@
-package com.project_hub.project_hub_common_service.config;
+package com.project_hub.project_hub_service.config;
 
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
@@ -19,7 +19,7 @@ public class SwaggerConfig {
 
         return new OpenAPI()
             .info(new Info()
-                .title("Project Hub Common Service API")
+                .title("Project Hub Service API")
                 .version("1.0")
                 .description("This service handles common logic across Project Hub modules.")
                 .contact(new Contact()
@@ -38,8 +38,8 @@ public class SwaggerConfig {
     @Bean
     public GroupedOpenApi publicApi() {
         return GroupedOpenApi.builder()
-            .group("common-service")
-            .packagesToScan("com.project_hub.project_hub_common_service")
+            .group("project-hub-service")
+            .packagesToScan("com.project_hub.project_hub_service")
             .build();
     }
 }

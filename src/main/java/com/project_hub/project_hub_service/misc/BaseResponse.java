@@ -1,4 +1,4 @@
-package com.project_hub.project_hub_common_service.misc;
+package com.project_hub.project_hub_service.misc;
 
 import lombok.Getter;
 import lombok.Setter;

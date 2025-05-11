@@ -1,4 +1,4 @@
-package com.project_hub.project_hub_common_service.security;
+package com.project_hub.project_hub_service.security;
 
 import java.io.IOException;
 import java.util.List;
@@ -10,23 +10,23 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project_hub.project_hub_common_service.infrastructure.grpc.ProjectHubAccountServiceGrpcClient;
-import com.project_hub.project_hub_common_service.misc.BaseResponse;
+import com.project_hub.project_hub_service.infrastructure.grpc.AuthenticationServiceGrpcClient;
+import com.project_hub.project_hub_service.misc.BaseResponse;
 
+import authenticationservice.AuthenticationServiceOuterClass.ValidateTokenResponse;
 import io.grpc.StatusRuntimeException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import projecthubaccount.ProjectHubAccountServiceOuterClass.ValidateTokenResponse;
 
 @Component
 public class AuthenticationFilter extends OncePerRequestFilter {
 
-    private final ProjectHubAccountServiceGrpcClient projectHubAccountServiceGrpcClient;
+    private final AuthenticationServiceGrpcClient authenticationServiceGrpcClient;
 
-    public AuthenticationFilter(ProjectHubAccountServiceGrpcClient grpcClient) {
-        this.projectHubAccountServiceGrpcClient = grpcClient;
+    public AuthenticationFilter(AuthenticationServiceGrpcClient grpcClient) {
+        this.authenticationServiceGrpcClient = grpcClient;
     }
 
     @Override
@@ -42,7 +42,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         String token = authHeader;
 
         try {
-            ValidateTokenResponse validateResponse = projectHubAccountServiceGrpcClient.validate(token);
+            ValidateTokenResponse validateResponse = authenticationServiceGrpcClient.validate(token);
 
             String userId = validateResponse.getId();
 

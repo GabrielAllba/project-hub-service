@@ -1,4 +1,4 @@
-package com.project_hub.project_hub_common_service.app.project.dtos.req;
+package com.project_hub.project_hub_service.app.dtos.req;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;

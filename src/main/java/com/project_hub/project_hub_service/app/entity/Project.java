@@ -1,6 +1,11 @@
-package com.project_hub.project_hub_common_service.app.project;
+package com.project_hub.project_hub_service.app.entity;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.LocalDateTime;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -30,4 +35,11 @@ public class Project {
 
     @NotBlank(message = "Creator ID must not be blank")
     private String creatorId;
+
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
 }
