@@ -44,7 +44,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         try {
             ValidateTokenResponse validateResponse = authenticationServiceGrpcClient.validate(token);
 
-            String userId = validateResponse.getId();
+            String userId = validateResponse.getUserId();
 
             if (userId == null || userId.isEmpty()) {
                 writeErrorResponse(response, HttpStatus.UNAUTHORIZED, "Invalid token: userId missing");

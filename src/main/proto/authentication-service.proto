@@ -11,7 +11,7 @@ message ValidateTokenRequest {
 }
 
 message ValidateTokenResponse {
-  string id = 1;
+  string userId = 1;
   string email = 2;
   string username = 3;
   bool isEmailVerified = 4; 
