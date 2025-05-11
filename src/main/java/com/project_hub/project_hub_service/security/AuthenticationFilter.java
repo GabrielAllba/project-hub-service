@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project_hub.project_hub_service.infrastructure.grpc.AuthenticationServiceGrpcClient;
+import com.project_hub.project_hub_service.app.repository.gRpc.AuthenticationGrpcRepository;
 import com.project_hub.project_hub_service.misc.BaseResponse;
 
 import authenticationservice.AuthenticationServiceOuterClass.ValidateTokenResponse;
@@ -23,10 +23,10 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 public class AuthenticationFilter extends OncePerRequestFilter {
 
-    private final AuthenticationServiceGrpcClient authenticationServiceGrpcClient;
+    private final AuthenticationGrpcRepository authenticationGrpcRepository;
 
-    public AuthenticationFilter(AuthenticationServiceGrpcClient grpcClient) {
-        this.authenticationServiceGrpcClient = grpcClient;
+    public AuthenticationFilter(AuthenticationGrpcRepository grpcRepository) {
+        this.authenticationGrpcRepository = grpcRepository;
     }
 
     @Override
@@ -42,7 +42,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         String token = authHeader;
 
         try {
-            ValidateTokenResponse validateResponse = authenticationServiceGrpcClient.validate(token);
+            ValidateTokenResponse validateResponse = authenticationGrpcRepository.validateToken(token);
 
             String userId = validateResponse.getUserId();
 

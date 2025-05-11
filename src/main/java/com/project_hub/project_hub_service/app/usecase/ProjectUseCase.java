@@ -12,16 +12,20 @@ import com.project_hub.project_hub_service.app.dtos.req.AddMemberRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProjectRequest;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.ProjectMember;
-import com.project_hub.project_hub_service.app.repository.ProjectMemberRepository;
-import com.project_hub.project_hub_service.app.repository.ProjectRepository;
+import com.project_hub.project_hub_service.app.repository.gRpc.AuthenticationGrpcRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.ProjectMemberRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.ProjectRepository;
 
 @Service
 public class ProjectUseCase {
 
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository projectMemberRepository;
+    private final AuthenticationGrpcRepository authenticationGrpcRepository;
 
-    public ProjectUseCase(ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository) {
+    
+    public ProjectUseCase( AuthenticationGrpcRepository authenticationGrpcRepository, ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository) {
+        this.authenticationGrpcRepository = authenticationGrpcRepository;
         this.projectRepository = projectRepository;
         this.projectMemberRepository = projectMemberRepository;
 
