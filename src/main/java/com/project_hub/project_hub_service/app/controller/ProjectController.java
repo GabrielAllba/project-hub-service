@@ -11,7 +11,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.project_hub.project_hub_service.app.dtos.req.AddMemberRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProjectRequest;
+import com.project_hub.project_hub_service.app.dtos.res.AcceptProjectInvitationResponse;
+import com.project_hub.project_hub_service.app.dtos.res.InviteProjectMemberResponse;
 import com.project_hub.project_hub_service.app.entity.Project;
+import com.project_hub.project_hub_service.app.entity.ProjectInvitation;
 import com.project_hub.project_hub_service.app.entity.ProjectMember;
 import com.project_hub.project_hub_service.app.usecase.ProjectUseCase;
 import com.project_hub.project_hub_service.misc.BaseResponse;
@@ -47,16 +50,45 @@ public class ProjectController {
     }
 
     @PostMapping("/{projectId}/member/invite")
-    public ResponseEntity<BaseResponse<ProjectMember>> addMember(
+    @Operation(summary = "Invite member to project")
+    public ResponseEntity<BaseResponse<InviteProjectMemberResponse>> addMember(
             @PathVariable String projectId,
             @Validated @RequestBody AddMemberRequest dto) {
 
-        ProjectMember member = projectUseCase.addMember(projectId, dto);
+        ProjectInvitation member = projectUseCase.inviteMember(projectId, dto);
 
-        BaseResponse<ProjectMember> response = new BaseResponse<>(
+        InviteProjectMemberResponse responseData = InviteProjectMemberResponse.builder()
+                .invitationId(member.getId())
+                .projectId(member.getProject().getId())
+                .inviteeId(member.getInviteeId())
+                .inviterId(member.getInviterId())
+                .invitedAt(member.getInvitedAt())
+                .status(member.getStatus())
+                .build();
+
+        BaseResponse<InviteProjectMemberResponse> response = new BaseResponse<>(
                 "success",
                 "Member invited successfully",
-                member);
+                responseData);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{invitationId}/member/accept")
+    @Operation(summary = "Accept project invitation")
+    public ResponseEntity<BaseResponse<AcceptProjectInvitationResponse>> acceptInvitation(
+            @PathVariable String invitationId) {
+
+        ProjectMember member = projectUseCase.acceptInvitation(invitationId);
+        AcceptProjectInvitationResponse responseData = AcceptProjectInvitationResponse.builder()
+                .memberId(member.getId())
+                .projectId(member.getProject().getId())
+                .userId(member.getUserId())
+                .build();
+        BaseResponse<AcceptProjectInvitationResponse> response = new BaseResponse<>(
+                "success",
+                "Invitation accepted successfully",
+                responseData);
 
         return ResponseEntity.ok(response);
     }
