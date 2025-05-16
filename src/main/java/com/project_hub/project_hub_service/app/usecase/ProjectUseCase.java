@@ -1,9 +1,14 @@
 package com.project_hub.project_hub_service.app.usecase;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -12,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.project_hub.project_hub_service.app.dtos.req.AddMemberRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProjectRequest;
+import com.project_hub.project_hub_service.app.dtos.res.ProjectSummaryResponse;
 import com.project_hub.project_hub_service.app.entity.InvitationStatus;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.ProjectInvitation;
@@ -125,6 +131,33 @@ public class ProjectUseCase {
                 .build();
 
         return projectMemberRepository.save(newMember);
+    }
+
+    public Page<ProjectSummaryResponse> getProjectsForUser(Pageable pageable) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String userId = authentication.getPrincipal().toString();
+
+        List<String> memberProjectIds = projectMemberRepository.findAllByUserId(userId)
+                .stream()
+                .map(pm -> pm.getProject().getId())
+                .toList();
+
+        List<String> createdProjectIds = projectRepository.findAllByCreatorId(userId)
+                .stream()
+                .map(Project::getId)
+                .toList();
+
+        Set<String> allProjectIds = new HashSet<>();
+        allProjectIds.addAll(memberProjectIds);
+        allProjectIds.addAll(createdProjectIds);
+
+        Page<Project> projectPage = projectRepository.findAllByIdIn(allProjectIds, pageable);
+
+        return projectPage.map(project -> ProjectSummaryResponse.builder()
+                .projectId(project.getId())
+                .name(project.getName())
+                .description(project.getDescription())
+                .build());
     }
 
 }

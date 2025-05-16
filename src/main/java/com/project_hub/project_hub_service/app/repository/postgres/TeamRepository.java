@@ -8,10 +8,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import com.project_hub.project_hub_service.app.entity.Project;
+import com.project_hub.project_hub_service.app.entity.Team;
 
 @Repository
-public interface ProjectRepository extends JpaRepository<Project, String> {
-    List<Project> findAllByCreatorId(String creatorId);
-    Page<Project> findAllByIdIn(Collection<String> ids, Pageable pageable);
+public interface TeamRepository extends JpaRepository<Team, String> {
+        List<Team> findAllByCreatorId(String creatorId);
+
+        Page<Team> findAllByIdIn(Collection<String> ids, Pageable pageable);
 }
