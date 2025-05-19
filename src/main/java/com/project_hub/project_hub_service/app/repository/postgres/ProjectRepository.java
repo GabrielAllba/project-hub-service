@@ -12,6 +12,9 @@ import com.project_hub.project_hub_service.app.entity.Project;
 
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, String> {
-    List<Project> findAllByCreatorId(String creatorId);
+    List<Project> findAllByProductOwnerId(String productOwnerId);
+    List<Project> findAllByScrumMasterId(String scrumMasterId);
     Page<Project> findAllByIdIn(Collection<String> ids, Pageable pageable);
+    boolean existsByIdAndProductOwnerId(String id, String productOwnerId);
+    boolean existsByIdAndScrumMasterId(String id, String scrumMasterId);
 }

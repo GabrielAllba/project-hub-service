@@ -6,7 +6,7 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class AddMemberRequest {
+public class AddProjectDeveloperRequest {
 
     @NotBlank(message = "User ID must not be blank")
     private String userId;

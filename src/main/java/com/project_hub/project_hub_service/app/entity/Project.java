@@ -11,7 +11,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -35,8 +34,11 @@ public class Project {
 
     private String description;
 
-    @NotBlank(message = "Creator ID must not be blank")
-    private String creatorId;
+    @Column(name = "product_owner_id", nullable = true)
+    private String productOwnerId;
+
+    @Column(name = "scrum_master_id", nullable = true)
+    private String scrumMasterId;
 
     @CreationTimestamp
     @Column(updatable = false)
