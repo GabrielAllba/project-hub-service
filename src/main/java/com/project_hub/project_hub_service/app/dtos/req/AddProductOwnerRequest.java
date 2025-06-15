@@ -7,7 +7,7 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class AddScrumMasterRequest {
+public class AddProductOwnerRequest {
 
     private List<String> userIds;
 }

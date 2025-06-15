@@ -2,6 +2,8 @@ package com.project_hub.project_hub_service.app.entity;
 
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.CreationTimestamp;
+
 import com.project_hub.project_hub_service.app.constants.InvitationStatus;
 import com.project_hub.project_hub_service.app.constants.ProjectRole;
 
@@ -60,6 +62,4 @@ public class ProjectInvitation {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ProjectRole role;
-
-
 }

@@ -1,35 +1,40 @@
 package com.project_hub.project_hub_service.app.controller;
 
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.project_hub.project_hub_service.app.constants.ProjectRole;
+import com.project_hub.project_hub_service.app.dtos.req.AddProductOwnerRequest;
 import com.project_hub.project_hub_service.app.dtos.req.AddProjectDeveloperRequest;
 import com.project_hub.project_hub_service.app.dtos.req.AddScrumMasterRequest;
-import com.project_hub.project_hub_service.app.dtos.req.CreateProductBacklogRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProjectRequest;
-import com.project_hub.project_hub_service.app.dtos.res.AcceptProjectDeveloperInvitationResponse;
-import com.project_hub.project_hub_service.app.dtos.res.CreateProductBacklogResponse;
-import com.project_hub.project_hub_service.app.dtos.res.InviteProjectDeveloperResponse;
-import com.project_hub.project_hub_service.app.dtos.res.InviteScrumMasterResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
+import com.project_hub.project_hub_service.app.dtos.res.ProjectInvitationResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectSummaryResponse;
-import com.project_hub.project_hub_service.app.entity.ProductBacklog;
+import com.project_hub.project_hub_service.app.dtos.res.ProjectUserResponse;
+import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.ProjectInvitation;
 import com.project_hub.project_hub_service.app.usecase.ProductBacklogUseCase;
 import com.project_hub.project_hub_service.app.usecase.ProjectUseCase;
+import com.project_hub.project_hub_service.app.usecase.SprintUseCase;
 import com.project_hub.project_hub_service.misc.BaseResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -43,13 +48,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class ProjectController {
 
         @Autowired
-        private final ProjectUseCase projectUseCase;
-        private final ProductBacklogUseCase productBacklogUseCase;
+        private ProjectUseCase projectUseCase;
 
-        public ProjectController(ProjectUseCase projectUseCase, ProductBacklogUseCase productBacklogUseCase) {
-                this.projectUseCase = projectUseCase;
-                this.productBacklogUseCase = productBacklogUseCase;
-        }
+        @Autowired
+        private ProductBacklogUseCase productBacklogUseCase;
+
+        @Autowired
+        private SprintUseCase sprintUseCase;
 
         @PostMapping
         @Operation(summary = "Create a new project")
@@ -64,71 +69,156 @@ public class ProjectController {
                 return ResponseEntity.ok(response);
         }
 
+        @GetMapping("/{projectId}")
+        @Operation(summary = "Get a project by ID")
+        public ResponseEntity<BaseResponse<Project>> getProjectById(@PathVariable String projectId) {
+                Project project = projectUseCase.getProjectById(projectId);
+
+                BaseResponse<Project> response = new BaseResponse<>(
+                                "success",
+                                "Project retrieved successfully",
+                                project);
+
+                return ResponseEntity.ok(response);
+        }
+
         @PostMapping("/{projectId}/developer/invite")
-        @Operation(summary = "Invite developer to project")
-        public ResponseEntity<BaseResponse<InviteProjectDeveloperResponse>> addDeveloper(
+        @Operation(summary = "Invite developers to project")
+        public ResponseEntity<BaseResponse<List<ProjectInvitationResponse>>> inviteDevelopers(
                         @PathVariable String projectId,
                         @Validated @RequestBody AddProjectDeveloperRequest dto) {
 
-                ProjectInvitation developer = projectUseCase.inviteDeveloper(projectId, dto);
+                List<ProjectInvitation> invitations = projectUseCase.inviteDevelopers(projectId, dto);
 
-                InviteProjectDeveloperResponse responseData = InviteProjectDeveloperResponse.builder()
-                                .invitationId(developer.getId())
-                                .projectId(developer.getProject().getId())
-                                .inviteeId(developer.getInviteeId())
-                                .inviterId(developer.getInviterId())
-                                .invitedAt(developer.getInvitedAt())
-                                .status(developer.getStatus())
-                                .build();
+                List<ProjectInvitationResponse> responseData = invitations.stream()
+                                .map(inv -> ProjectInvitationResponse.builder()
+                                                .id(inv.getId())
+                                                .acceptedAt(inv.getAcceptedAt())
+                                                .role(inv.getRole())
+                                                .invitationId(inv.getId())
+                                                .projectId(inv.getProject().getId())
+                                                .inviteeId(inv.getInviteeId())
+                                                .inviterId(inv.getInviterId())
+                                                .invitedAt(inv.getInvitedAt())
+                                                .status(inv.getStatus())
+                                                .build())
+                                .toList();
 
-                BaseResponse<InviteProjectDeveloperResponse> response = new BaseResponse<>(
+                BaseResponse<List<ProjectInvitationResponse>> response = new BaseResponse<>(
                                 "success",
-                                "Developer invited successfully",
+                                "Developers invited successfully",
+                                responseData);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @PostMapping("/{projectId}/product_owner/invite")
+        @Operation(summary = "Invite product owners to project")
+        public ResponseEntity<BaseResponse<List<ProjectInvitationResponse>>> inviteProductOwners(
+                        @PathVariable String projectId,
+                        @Validated @RequestBody AddProductOwnerRequest dto) {
+
+                List<ProjectInvitation> invitations = projectUseCase.inviteProductOwners(projectId, dto);
+
+                List<ProjectInvitationResponse> responseData = invitations.stream()
+                                .map(inv -> ProjectInvitationResponse.builder()
+                                                .id(inv.getId())
+                                                .acceptedAt(inv.getAcceptedAt())
+                                                .role(inv.getRole())
+                                                .invitationId(inv.getId())
+                                                .projectId(inv.getProject().getId())
+                                                .inviteeId(inv.getInviteeId())
+                                                .inviterId(inv.getInviterId())
+                                                .invitedAt(inv.getInvitedAt())
+                                                .status(inv.getStatus())
+                                                .build())
+                                .toList();
+
+                BaseResponse<List<ProjectInvitationResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Product owners invited successfully",
                                 responseData);
 
                 return ResponseEntity.ok(response);
         }
 
         @PostMapping("/{projectId}/scrum_master/invite")
-        @Operation(summary = "Invite scrum master to project")
-        public ResponseEntity<BaseResponse<InviteScrumMasterResponse>> addDeveloper(
+        @Operation(summary = "Invite scrum masters to project")
+        public ResponseEntity<BaseResponse<List<ProjectInvitationResponse>>> addScrumMasters(
                         @PathVariable String projectId,
                         @Validated @RequestBody AddScrumMasterRequest dto) {
 
-                ProjectInvitation developer = projectUseCase.inviteScrumMaster(projectId, dto);
+                List<ProjectInvitation> invitations = projectUseCase.inviteScrumMasters(projectId, dto);
 
-                InviteScrumMasterResponse responseData = InviteScrumMasterResponse.builder()
-                                .invitationId(developer.getId())
-                                .projectId(developer.getProject().getId())
-                                .inviteeId(developer.getInviteeId())
-                                .inviterId(developer.getInviterId())
-                                .invitedAt(developer.getInvitedAt())
-                                .status(developer.getStatus())
-                                .build();
+                List<ProjectInvitationResponse> responseData = invitations.stream()
+                                .map(invitation -> ProjectInvitationResponse.builder()
+                                                .id(invitation.getId())
+                                                .acceptedAt(invitation.getAcceptedAt())
+                                                .role(invitation.getRole())
+                                                .invitationId(invitation.getId())
+                                                .projectId(invitation.getProject().getId())
+                                                .inviteeId(invitation.getInviteeId())
+                                                .inviterId(invitation.getInviterId())
+                                                .invitedAt(invitation.getInvitedAt())
+                                                .status(invitation.getStatus())
+                                                .build())
+                                .toList();
 
-                BaseResponse<InviteScrumMasterResponse> response = new BaseResponse<>(
+                BaseResponse<List<ProjectInvitationResponse>> response = new BaseResponse<>(
                                 "success",
-                                "Scrum master invited successfully",
+                                "Scrum masters invited successfully",
                                 responseData);
 
                 return ResponseEntity.ok(response);
         }
 
-        @PostMapping("/{invitationId}/accept")
+        @PutMapping("/{invitationId}/accept")
         @Operation(summary = "Accept project invitation")
-        public ResponseEntity<BaseResponse<AcceptProjectDeveloperInvitationResponse>> acceptInvitation(
+        public ResponseEntity<BaseResponse<ProjectInvitationResponse>> acceptInvitation(
                         @PathVariable String invitationId) {
 
                 ProjectInvitation invitation = projectUseCase.acceptProjectInvitation(invitationId);
-                AcceptProjectDeveloperInvitationResponse responseData = AcceptProjectDeveloperInvitationResponse
+                ProjectInvitationResponse responseData = ProjectInvitationResponse
                                 .builder()
-                                .projectId(invitation.getProject().getId())
-                                .userId(invitation.getInviteeId())
+                                .id(invitation.getId())
+                                .acceptedAt(invitation.getAcceptedAt())
                                 .role(invitation.getRole())
+                                .invitationId(invitation.getId())
+                                .projectId(invitation.getProject().getId())
+                                .inviteeId(invitation.getInviteeId())
+                                .inviterId(invitation.getInviterId())
+                                .invitedAt(invitation.getInvitedAt())
+                                .status(invitation.getStatus())
                                 .build();
-                BaseResponse<AcceptProjectDeveloperInvitationResponse> response = new BaseResponse<>(
+                BaseResponse<ProjectInvitationResponse> response = new BaseResponse<>(
                                 "success",
                                 "Invitation accepted successfully",
+                                responseData);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @PutMapping("/{invitationId}/reject")
+        @Operation(summary = "Reject project invitation")
+        public ResponseEntity<BaseResponse<ProjectInvitationResponse>> rejectInvitation(
+                        @PathVariable String invitationId) {
+
+                ProjectInvitation invitation = projectUseCase.rejectProjectInvitation(invitationId);
+                ProjectInvitationResponse responseData = ProjectInvitationResponse
+                                .builder()
+                                .id(invitation.getId())
+                                .acceptedAt(invitation.getAcceptedAt())
+                                .role(invitation.getRole())
+                                .invitationId(invitation.getId())
+                                .projectId(invitation.getProject().getId())
+                                .inviteeId(invitation.getInviteeId())
+                                .inviterId(invitation.getInviterId())
+                                .invitedAt(invitation.getInvitedAt())
+                                .status(invitation.getStatus())
+                                .build();
+                BaseResponse<ProjectInvitationResponse> response = new BaseResponse<>(
+                                "success",
+                                "Invitation rejected successfully",
                                 responseData);
 
                 return ResponseEntity.ok(response);
@@ -151,42 +241,114 @@ public class ProjectController {
                 return ResponseEntity.ok(response);
         }
 
-        @GetMapping("/{projectId}/product_backlog")
+        @GetMapping("/{projectId}/sprints/all-status")
+        public ResponseEntity<BaseResponse<Page<SprintResponse>>> getProjectSprintsAllStatus(
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size,
+                        @PathVariable String projectId) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<SprintResponse> sprints = sprintUseCase.getPaginatedSprintsByProjectIdAllStatus(projectId,
+                                pageable);
+
+                BaseResponse<Page<SprintResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Sprints retrieved successfully",
+                                sprints);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/{projectId}/sprints")
+        @Operation(summary = "Get paginated sprints where the project is projectId")
+        public ResponseEntity<BaseResponse<Page<SprintResponse>>> getProjectSprints(
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size,
+                        @PathVariable String projectId) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<SprintResponse> sprints = sprintUseCase.getPaginatedSprintsByProjectId(projectId, pageable);
+
+                BaseResponse<Page<SprintResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Sprints retrieved successfully",
+                                sprints);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/{projectId}/sprints/timeline")
+        @Operation(summary = "Get paginated timeline sprints where the project is projectId")
+        public ResponseEntity<BaseResponse<Page<SprintResponse>>> getProjectSprintsTimeline(
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size,
+                        @PathVariable String projectId) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<SprintResponse> sprints = sprintUseCase.getPaginatedSprintsTimelineByProjectId(projectId,
+                                pageable);
+
+                BaseResponse<Page<SprintResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Sprints retrieved successfully",
+                                sprints);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/{projectId}/product_backlogs")
         @Operation(summary = "Get paginated product backlog where the backlog is in project")
         public ResponseEntity<BaseResponse<Page<ProductBacklogResponse>>> getBacklogsByProjectPaginated(
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(defaultValue = "10") int size,
                         @PathVariable String projectId) {
-                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-                Page<ProductBacklogResponse> projects = productBacklogUseCase.getPaginatedBacklogsByProjectId(projectId,
+                Pageable pageable = PageRequest.of(page, size);
+                Page<ProductBacklogResponse> productBacklogs = productBacklogUseCase.getPaginatedBacklogsByProjectId(
+                                projectId,
                                 pageable);
 
                 BaseResponse<Page<ProductBacklogResponse>> response = new BaseResponse<>(
                                 "success",
                                 "Product backlog retrieved successfully",
-                                projects);
+                                productBacklogs);
                 return ResponseEntity.ok(response);
         }
 
-        @PostMapping("/{projectId}/product_backlog")
-        @Operation(summary = "Create new product backlog in a project")
-        public ResponseEntity<BaseResponse<CreateProductBacklogResponse>> createProductBacklog(
-                        @Validated @RequestBody CreateProductBacklogRequest dto,
+        @GetMapping("/{projectId}/sprints/in_progress")
+        @Operation(summary = "Get paginated in progress sprint in project")
+        public ResponseEntity<BaseResponse<Page<SprintResponse>>> getInProgressSprintByProjectPaginated(
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size,
                         @PathVariable String projectId) {
-                ProductBacklog productBacklog = productBacklogUseCase.create(projectId, dto);
+                Pageable pageable = PageRequest.of(page, size);
+                Page<SprintResponse> productBacklogs = sprintUseCase.getPaginatedInProgressSprintsByProjectId(
+                                projectId,
+                                pageable);
 
-                CreateProductBacklogResponse responseData = CreateProductBacklogResponse.builder()
-                                .projectId(productBacklog.getProject().getId())
-                                .title(productBacklog.getTitle())
-                                .priority(productBacklog.getPriority())
-                                .status(productBacklog.getStatus())
-                                .creatorId(productBacklog.getCreatorId())
-                                .build();
-                BaseResponse<CreateProductBacklogResponse> response = new BaseResponse<>(
+                BaseResponse<Page<SprintResponse>> response = new BaseResponse<>(
                                 "success",
-                                "Product backlog created successfully",
-                                responseData);
-
+                                "Product backlog retrieved successfully",
+                                productBacklogs);
                 return ResponseEntity.ok(response);
         }
+
+        @GetMapping("/{projectId}/members")
+        @Operation(summary = "Get project members by role")
+        public ResponseEntity<BaseResponse<List<ProjectUserResponse>>> getProjectMembers(
+                        @PathVariable String projectId,
+                        @RequestParam("role") String role) {
+
+                ProjectRole projectRole;
+                try {
+                        projectRole = ProjectRole.valueOf(role.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role: " + role);
+                }
+
+                List<ProjectUserResponse> members = projectUseCase.getProjectMembersByRole(projectId, projectRole);
+                BaseResponse<List<ProjectUserResponse>> response = new BaseResponse<>(
+                                "success", "Project members retrieved", members);
+                return ResponseEntity.ok(response);
+        }
+
 }

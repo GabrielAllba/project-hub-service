@@ -1,6 +1,7 @@
 package com.project_hub.project_hub_service.app.dtos.req;
 
-import jakarta.validation.constraints.NotBlank;
+import java.util.List;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -8,6 +9,5 @@ import lombok.Setter;
 @Setter
 public class AddProjectDeveloperRequest {
 
-    @NotBlank(message = "User ID must not be blank")
-    private String userId;
+    private List<String> userIds;
 }

@@ -6,9 +6,8 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class CreateProductBacklogRequest{
-    @NotBlank(message = "Title must not be blank")
-    private String title;
-
-    private String sprintId;
+public class RenameProductGoalRequest {
+    @NotBlank(message = "New title must not be blank")
+    private String newTitle;
+    private String productGoalId;
 }

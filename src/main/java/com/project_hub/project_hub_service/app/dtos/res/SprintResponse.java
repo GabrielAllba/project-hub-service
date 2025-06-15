@@ -1,7 +1,5 @@
 package com.project_hub.project_hub_service.app.dtos.res;
 
-import com.project_hub.project_hub_service.app.constants.ProjectRole;
-
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,9 +9,14 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ProjectSummaryResponse {
+public class SprintResponse {
+    private String id;
     private String projectId;
     private String name;
-    private String description;
-    private ProjectRole userRole; 
+    private String sprintGoal;
+    private String startDate;
+    private String endDate;
+    private String createdAt;
+    private String updatedAt;
+    private String status;
 }
