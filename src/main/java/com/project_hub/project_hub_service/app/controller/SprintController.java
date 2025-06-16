@@ -107,9 +107,11 @@ public class SprintController {
 
                 return ResponseEntity.ok(response);
         }
+
         @GetMapping("/{sprintId}/complete_sprint/info")
         @Operation(summary = "Get a complete sprint info by sprint ID")
-        public ResponseEntity<BaseResponse<CompleteSprintInfoResponse>> getCompleteSprintInfo(@PathVariable String sprintId) {
+        public ResponseEntity<BaseResponse<CompleteSprintInfoResponse>> getCompleteSprintInfo(
+                        @PathVariable String sprintId) {
                 CompleteSprintInfoResponse sprint = sprintUseCase.getCompleteSprintInfo(sprintId);
 
                 BaseResponse<CompleteSprintInfoResponse> response = new BaseResponse<>(
@@ -153,6 +155,25 @@ public class SprintController {
                                 "success",
                                 "Sprint completed successfully",
                                 startedSprint);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/search")
+        @Operation(summary = "Search sprints by name or sprint goal")
+        public ResponseEntity<BaseResponse<Page<SprintResponse>>> searchSprints(
+                        @RequestParam String projectId,
+                        @RequestParam String keyword,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<SprintResponse> results = sprintUseCase.searchSprint(projectId, keyword, pageable);
+
+                BaseResponse<Page<SprintResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Sprints retrieved successfully",
+                                results);
 
                 return ResponseEntity.ok(response);
         }

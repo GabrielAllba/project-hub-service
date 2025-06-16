@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.project_hub.project_hub_service.app.dtos.res.ProjectInvitationResponse;
+import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.usecase.ProjectUseCase;
 import com.project_hub.project_hub_service.misc.BaseResponse;
 
@@ -26,7 +27,7 @@ public class ProjectInvitationController {
     @Autowired
     private ProjectUseCase projectUseCase;
 
-    @GetMapping("/{userId}")
+    @GetMapping("/user/{userId}")
     @Operation(summary = "Get project invitations by user ID")
     public ResponseEntity<BaseResponse<Page<ProjectInvitationResponse>>> getProjectInvitationsByUserId(
             @PathVariable String userId,
@@ -38,6 +39,20 @@ public class ProjectInvitationController {
                 "success",
                 "Project invitations fetched successfully",
                 invitations);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{projectInvitationId}")
+    @Operation(summary = "Get a project invitation by ID")
+    public ResponseEntity<BaseResponse<ProjectInvitationResponse>> getProjectById(
+            @PathVariable String projectInvitationId) {
+        ProjectInvitationResponse project = projectUseCase.getProjectInvitationById(projectInvitationId);
+
+        BaseResponse<ProjectInvitationResponse> response = new BaseResponse<>(
+                "success",
+                "Project invitation retrieved successfully",
+                project);
 
         return ResponseEntity.ok(response);
     }

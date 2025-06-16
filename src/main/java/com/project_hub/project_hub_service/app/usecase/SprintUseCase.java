@@ -347,4 +347,26 @@ public class SprintUseCase {
                                 .status(saved.getStatus().toString())
                                 .build();
         }
+
+        public Page<SprintResponse> searchSprint(String projectId, String keyword, Pageable pageable) {
+                Page<Sprint> sprints = sprintRepository
+                                .findByProjectIdAndNameContainingIgnoreCaseOrProjectIdAndSprintGoalContainingIgnoreCase(
+                                                projectId, keyword, projectId, keyword, pageable);
+
+                DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE;
+
+                return sprints.map(sprint -> SprintResponse.builder()
+                                .id(sprint.getId())
+                                .projectId(sprint.getProject().getId())
+                                .name(sprint.getName())
+                                .sprintGoal(sprint.getSprintGoal())
+                                .status(sprint.getStatus().toString())
+                                .startDate(sprint.getStartDate() != null ? sprint.getStartDate().format(formatter)
+                                                : null)
+                                .endDate(sprint.getEndDate() != null ? sprint.getEndDate().format(formatter) : null)
+                                .createdAt(sprint.getCreatedAt().toString())
+                                .updatedAt(sprint.getUpdatedAt().toString())
+                                .build());
+        }
+
 }

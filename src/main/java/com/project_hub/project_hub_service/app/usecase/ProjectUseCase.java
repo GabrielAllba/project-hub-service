@@ -1,10 +1,13 @@
 package com.project_hub.project_hub_service.app.usecase;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -99,31 +102,60 @@ public class ProjectUseCase {
 
         if (!isProductOwnerOrScrumMaster(projectId, requesterId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Only product owner or scrum master can invite developers");
+                    "Only a product owner or scrum master can invite developers");
         }
 
-        List<ProjectInvitation> invitations = request.getUserIds().stream().map(userId -> {
-            if (requesterId.equals(userId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "You are already a member of this project");
-            }
+        List<ProjectInvitation> invitations = new ArrayList<>();
+        Map<String, String> failedUsers = new LinkedHashMap<>();
 
-            FindUserResponse user = findUserOrThrow(userId);
-
+        for (String userId : request.getUserIds()) {
+            FindUserResponse user;
             try {
-                return ProjectInvitation.builder()
-                        .invitedAt(LocalDateTime.now())
-                        .status(InvitationStatus.PENDING)
-                        .inviterId(requesterId)
-                        .inviteeId(user.getId())
-                        .project(project)
-                        .role(ProjectRole.DEVELOPER)
-                        .build();
-            } catch (DataIntegrityViolationException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "User already invited: " + user.getUsername());
+                user = findUserOrThrow(userId);
+            } catch (ResponseStatusException e) {
+                failedUsers.put(userId, "User not found");
+                continue;
             }
-        }).toList();
+            String identifier = user.getEmail();
+
+            if (requesterId.equals(userId)) {
+                failedUsers.put(identifier, "You are already a member of this project");
+                continue;
+            }
+
+            if (isUserAlreadyMember(projectId, userId)) {
+                failedUsers.put(identifier, "Already a member of this project");
+                continue;
+            }
+
+            if (hasExistingInvitation(projectId, userId, ProjectRole.DEVELOPER)) {
+                failedUsers.put(identifier, "Already invited as developer");
+                continue;
+            }
+
+            Optional<ProjectInvitation> existingInvitation = getAnyExistingInvitation(projectId, userId);
+            if (existingInvitation.isPresent()) {
+                failedUsers.put(identifier, "Already invited as " +
+                        existingInvitation.get().getRole().name().toLowerCase().replace("_", " "));
+                continue;
+            }
+
+            invitations.add(ProjectInvitation.builder()
+                    .invitedAt(LocalDateTime.now())
+                    .status(InvitationStatus.PENDING)
+                    .inviterId(requesterId)
+                    .inviteeId(user.getId())
+                    .project(project)
+                    .role(ProjectRole.DEVELOPER)
+                    .build());
+        }
+
+        if (!failedUsers.isEmpty()) {
+            String errorMessage = failedUsers.entrySet().stream()
+                    .map(e -> e.getKey() + ": " + e.getValue())
+                    .collect(Collectors.joining("; "));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to invite: " + errorMessage);
+        }
 
         return projectInvitationRepository.saveAll(invitations);
     }
@@ -132,33 +164,62 @@ public class ProjectUseCase {
         String requesterId = getCurrentUserId();
         Project project = getProjectOrThrow(projectId);
 
-        if (!projectScrumMasterRepository.existsByProjectIdAndUserId(projectId, requesterId)) {
+        if (!projectProductOwnerRepository.existsByProjectIdAndUserId(projectId, requesterId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Only a scrum master can invite product owners");
+                    "Only a product owner can invite other product owners");
         }
 
-        List<ProjectInvitation> invitations = request.getUserIds().stream().map(userId -> {
-            if (requesterId.equals(userId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "You are already a member of this project");
-            }
+        List<ProjectInvitation> invitations = new ArrayList<>();
+        Map<String, String> failedUsers = new LinkedHashMap<>();
 
-            FindUserResponse user = findUserOrThrow(userId);
-
+        for (String userId : request.getUserIds()) {
+            FindUserResponse user;
             try {
-                return ProjectInvitation.builder()
-                        .invitedAt(LocalDateTime.now())
-                        .status(InvitationStatus.PENDING)
-                        .inviterId(requesterId)
-                        .inviteeId(user.getId())
-                        .project(project)
-                        .role(ProjectRole.PRODUCT_OWNER)
-                        .build();
-            } catch (DataIntegrityViolationException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "User already invited: " + user.getUsername());
+                user = findUserOrThrow(userId);
+            } catch (ResponseStatusException e) {
+                failedUsers.put(userId, "User not found");
+                continue;
             }
-        }).toList();
+            String identifier = user.getEmail();
+
+            if (requesterId.equals(userId)) {
+                failedUsers.put(identifier, "You are already a member of this project");
+                continue;
+            }
+
+            if (isUserAlreadyMember(projectId, userId)) {
+                failedUsers.put(identifier, "Already a member of this project");
+                continue;
+            }
+
+            if (hasExistingInvitation(projectId, userId, ProjectRole.PRODUCT_OWNER)) {
+                failedUsers.put(identifier, "Already invited as product owner");
+                continue;
+            }
+
+            Optional<ProjectInvitation> existingInvitation = getAnyExistingInvitation(projectId, userId);
+            if (existingInvitation.isPresent()) {
+                failedUsers.put(identifier, "Already invited as " +
+                        existingInvitation.get().getRole().name().toLowerCase().replace("_", " "));
+                continue;
+            }
+
+            invitations.add(ProjectInvitation.builder()
+                    .invitedAt(LocalDateTime.now())
+                    .status(InvitationStatus.PENDING)
+                    .inviterId(requesterId)
+                    .inviteeId(user.getId())
+                    .project(project)
+                    .role(ProjectRole.PRODUCT_OWNER)
+                    .build());
+        }
+
+        if (!failedUsers.isEmpty()) {
+            String errorMessage = failedUsers.entrySet().stream()
+                    .map(e -> e.getKey() + ": " + e.getValue())
+                    .collect(Collectors.joining("; "));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to invite: " + errorMessage);
+        }
 
         return projectInvitationRepository.saveAll(invitations);
     }
@@ -167,35 +228,67 @@ public class ProjectUseCase {
         String requesterId = getCurrentUserId();
         Project project = getProjectOrThrow(projectId);
 
-        if (!projectProductOwnerRepository.existsByProjectIdAndUserId(projectId, requesterId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the product owner can invite scrum masters");
+        if (!isProductOwnerOrScrumMaster(projectId, requesterId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only a product owner or scrum master can invite scrum masters");
         }
 
-        List<ProjectInvitation> invitations = request.getUserIds().stream().map(userId -> {
-            if (requesterId.equals(userId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You are already a member of this project");
-            }
+        List<ProjectInvitation> invitations = new ArrayList<>();
+        Map<String, String> failedUsers = new LinkedHashMap<>();
 
-            FindUserResponse user = findUserOrThrow(userId);
-
+        for (String userId : request.getUserIds()) {
+            FindUserResponse user;
             try {
-                return ProjectInvitation.builder()
-                        .invitedAt(LocalDateTime.now())
-                        .status(InvitationStatus.PENDING)
-                        .inviterId(requesterId)
-                        .inviteeId(user.getId())
-                        .project(project)
-                        .role(ProjectRole.SCRUM_MASTER)
-                        .build();
-            } catch (DataIntegrityViolationException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "User already invited: " + user.getUsername());
+                user = findUserOrThrow(userId);
+            } catch (ResponseStatusException e) {
+                failedUsers.put(userId, "User not found");
+                continue;
             }
-        }).toList();
+            String identifier = user.getEmail();
+
+            if (requesterId.equals(userId)) {
+                failedUsers.put(identifier, "You are already a member of this project");
+                continue;
+            }
+
+            if (isUserAlreadyMember(projectId, userId)) {
+                failedUsers.put(identifier, "Already a member of this project");
+                continue;
+            }
+
+            if (hasExistingInvitation(projectId, userId, ProjectRole.SCRUM_MASTER)) {
+                failedUsers.put(identifier, "Already invited as scrum master");
+                continue;
+            }
+
+            Optional<ProjectInvitation> existingInvitation = getAnyExistingInvitation(projectId, userId);
+            if (existingInvitation.isPresent()) {
+                failedUsers.put(identifier, "Already invited as " +
+                        existingInvitation.get().getRole().name().toLowerCase().replace("_", " "));
+                continue;
+            }
+
+            invitations.add(ProjectInvitation.builder()
+                    .invitedAt(LocalDateTime.now())
+                    .status(InvitationStatus.PENDING)
+                    .inviterId(requesterId)
+                    .inviteeId(user.getId())
+                    .project(project)
+                    .role(ProjectRole.SCRUM_MASTER)
+                    .build());
+        }
+
+        if (!failedUsers.isEmpty()) {
+            String errorMessage = failedUsers.entrySet().stream()
+                    .map(e -> e.getKey() + ": " + e.getValue())
+                    .collect(Collectors.joining("; "));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to invite: " + errorMessage);
+        }
 
         return projectInvitationRepository.saveAll(invitations);
     }
 
+    @Transactional
     public ProjectInvitation acceptProjectInvitation(String invitationId) {
         String requesterId = getCurrentUserId();
 
@@ -203,7 +296,7 @@ public class ProjectUseCase {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invitation not found"));
 
         if (!invitation.getInviteeId().equals(requesterId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to accept this invitation");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, " not authorized to accept this invitation");
         }
 
         if (invitation.getStatus() != InvitationStatus.PENDING) {
@@ -234,7 +327,7 @@ public class ProjectUseCase {
             }
             return invitation;
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You are already a member of this project");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, " already a member of this project");
         }
     }
 
@@ -254,30 +347,7 @@ public class ProjectUseCase {
 
         invitation.setStatus(InvitationStatus.REJECTED);
         invitation.setAcceptedAt(LocalDateTime.now());
-        projectInvitationRepository.save(invitation);
-
-        try {
-            if (invitation.getRole() == ProjectRole.DEVELOPER) {
-                ProjectDeveloper newDev = ProjectDeveloper.builder()
-                        .project(invitation.getProject())
-                        .userId(requesterId)
-                        .build();
-                projectDeveloperRepository.save(newDev);
-            } else if (invitation.getRole() == ProjectRole.SCRUM_MASTER) {
-                projectScrumMasterRepository.save(ProjectScrumMaster.builder()
-                        .project(invitation.getProject())
-                        .userId(requesterId)
-                        .build());
-            } else if (invitation.getRole() == ProjectRole.PRODUCT_OWNER) {
-                projectProductOwnerRepository.save(ProjectProductOwner.builder()
-                        .project(invitation.getProject())
-                        .userId(requesterId)
-                        .build());
-            }
-            return invitation;
-        } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You are already a member of this project");
-        }
+        return projectInvitationRepository.save(invitation);
     }
 
     public Page<ProjectSummaryResponse> getProjectsForUser(Pageable pageable) {
@@ -352,6 +422,28 @@ public class ProjectUseCase {
                 .build());
     }
 
+    public ProjectInvitationResponse getProjectInvitationById(String projectInvitationId) {
+        Optional<ProjectInvitation> optionalInvitation = projectInvitationRepository.findById(projectInvitationId);
+        if (optionalInvitation.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Invitation with id " + projectInvitationId + " not found");
+        }
+
+        ProjectInvitation invitation = optionalInvitation.get();
+
+        return ProjectInvitationResponse.builder()
+                .id(invitation.getId())
+                .acceptedAt(invitation.getAcceptedAt())
+                .role(invitation.getRole())
+                .invitationId(invitation.getId())
+                .projectId(invitation.getProject().getId())
+                .inviterId(invitation.getInviterId())
+                .inviteeId(invitation.getInviteeId())
+                .status(invitation.getStatus())
+                .invitedAt(invitation.getInvitedAt())
+                .build();
+    }
+
     private String getCurrentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth.getPrincipal().toString();
@@ -374,4 +466,21 @@ public class ProjectUseCase {
         return projectProductOwnerRepository.existsByProjectIdAndUserId(projectId, userId) ||
                 projectScrumMasterRepository.existsByProjectIdAndUserId(projectId, userId);
     }
+
+    private boolean isUserAlreadyMember(String projectId, String userId) {
+        return projectScrumMasterRepository.existsByProjectIdAndUserId(projectId, userId)
+                || projectDeveloperRepository.existsByProjectIdAndUserId(projectId, userId)
+                || projectProductOwnerRepository.existsByProjectIdAndUserId(projectId, userId);
+    }
+
+    public boolean hasExistingInvitation(String projectId, String userId, ProjectRole role) {
+        return projectInvitationRepository.existsByProjectIdAndInviteeIdAndRoleAndStatus(
+                projectId, userId, role, InvitationStatus.PENDING);
+    }
+
+    public Optional<ProjectInvitation> getAnyExistingInvitation(String projectId, String userId) {
+        return projectInvitationRepository
+                .findFirstByProjectIdAndInviteeIdAndStatus(projectId, userId, InvitationStatus.PENDING);
+    }
+
 }

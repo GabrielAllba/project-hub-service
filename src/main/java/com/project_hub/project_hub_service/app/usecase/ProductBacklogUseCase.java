@@ -1,5 +1,6 @@
 package com.project_hub.project_hub_service.app.usecase;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -21,6 +22,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.project_hub.project_hub_service.app.constants.ProductBacklogPriority;
 import com.project_hub.project_hub_service.app.constants.ProductBacklogStatus;
+import com.project_hub.project_hub_service.app.constants.SprintStatus;
+import com.project_hub.project_hub_service.app.dtos.req.AssignBacklogUserRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProductBacklogRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogGoalRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogPointRequest;
@@ -28,10 +31,13 @@ import com.project_hub.project_hub_service.app.dtos.req.EditBacklogPriorityReque
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogStatusRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogTitleRequest;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
+import com.project_hub.project_hub_service.app.dtos.res.ProjectBacklogSummaryResponse;
+import com.project_hub.project_hub_service.app.dtos.res.UserWorkItemSummaryResponse;
 import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 import com.project_hub.project_hub_service.app.entity.ProductGoal;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.Sprint;
+import com.project_hub.project_hub_service.app.repository.gRpc.AuthenticationGrpcRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProductBacklogRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProductGoalRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectDeveloperRepository;
@@ -65,6 +71,9 @@ public class ProductBacklogUseCase {
 
         @Autowired
         private ProjectScrumMasterRepository projectScrumMasterRepository;
+
+        @Autowired
+        private AuthenticationGrpcRepository authenticationGrpcRepository;
 
         public ProductBacklogResponse create(String projectId, CreateProductBacklogRequest request) {
                 Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -611,4 +620,136 @@ public class ProductBacklogUseCase {
                                 status);
                 return backlogs;
         }
+
+        public ProductBacklogResponse assignUserToBacklog(AssignBacklogUserRequest dto) {
+                ProductBacklog backlog = productBacklogRepository.findById(dto.getBacklogId())
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                "Backlog not found"));
+
+                String projectId = backlog.getProject().getId();
+                String assigneeId = dto.getAssigneeId();
+
+                // Validasi bahwa user merupakan anggota tim
+                boolean isTeamMember = projectDeveloperRepository.existsByProjectIdAndUserId(projectId, assigneeId)
+                                || projectScrumMasterRepository.existsByProjectIdAndUserId(projectId, assigneeId)
+                                || projectProductOwnerRepository.existsByProjectIdAndUserId(projectId, assigneeId);
+
+                if (!isTeamMember) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                        "User with id " + assigneeId + " is not a member of the project team");
+                }
+
+                backlog.setAssigneeId(assigneeId);
+                ProductBacklog saved = productBacklogRepository.save(backlog);
+
+                return ProductBacklogResponse.builder()
+                                .id(saved.getId())
+                                .title(saved.getTitle())
+                                .projectId(projectId)
+                                .sprintId(saved.getSprint() != null ? saved.getSprint().getId() : null)
+                                .priority(saved.getPriority())
+                                .status(saved.getStatus())
+                                .creatorId(saved.getCreatorId())
+                                .assigneeId(saved.getAssigneeId())
+                                .createdAt(saved.getCreatedAt())
+                                .updatedAt(saved.getUpdatedAt())
+                                .point(saved.getPoint())
+                                .productGoalId(saved.getProductGoal() != null ? saved.getProductGoal().getId() : null)
+                                .prevBacklogId(saved.getPrevBacklog() != null ? saved.getPrevBacklog().getId() : null)
+                                .build();
+        }
+
+        public ProjectBacklogSummaryResponse getProjectBacklogSummary(String projectId) {
+                List<Sprint> activeSprints = sprintRepository
+                                .findAllByProjectIdAndStatus(projectId, SprintStatus.IN_PROGRESS);
+
+                // Jika tidak ada active sprint, langsung return 0 semua
+                if (activeSprints.isEmpty()) {
+                        return ProjectBacklogSummaryResponse.builder()
+                                        .totalTodo(0)
+                                        .totalInProgress(0)
+                                        .totalDone(0)
+                                        .build();
+                }
+
+                List<String> sprintIds = activeSprints.stream()
+                                .map(Sprint::getId)
+                                .toList();
+
+                List<ProductBacklog> backlogs = productBacklogRepository.findBySprintIdIn(sprintIds);
+
+                int todo = 0, inProgress = 0, done = 0;
+
+                for (ProductBacklog backlog : backlogs) {
+                        switch (backlog.getStatus()) {
+                                case TODO -> todo++;
+                                case INPROGRESS -> inProgress++;
+                                case DONE -> done++;
+                        }
+                }
+
+                return ProjectBacklogSummaryResponse.builder()
+                                .totalTodo(todo)
+                                .totalInProgress(inProgress)
+                                .totalDone(done)
+                                .build();
+        }
+
+        public List<UserWorkItemSummaryResponse> getWorkSummaryByTeamAndDateRange(String projectId, String range) {
+                // 1. Determine the start date based on the range
+                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime startDate = switch (range) {
+                        case "30d" -> now.minusDays(30);
+                        case "3m" -> now.minusMonths(3);
+                        default -> now.minusDays(7); // fallback to 7 days
+                };
+
+                // 2. Get sprints in the project that intersect with the date range
+                List<Sprint> sprints = sprintRepository.findByProjectIdAndDateRange(projectId, startDate, now);
+
+                if (sprints.isEmpty()) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                        "No sprints found in the selected date range: start date: "+startDate);
+                }
+
+                List<String> sprintIds = sprints.stream().map(Sprint::getId).toList();
+
+                // 3. Get backlog items within those sprints
+                List<ProductBacklog> backlogs = productBacklogRepository.findBySprintIdIn(sprintIds);
+
+                // 4. Group and count by assignee
+                Map<String, UserWorkItemSummaryResponse> summaryMap = new HashMap<>();
+
+                for (ProductBacklog backlog : backlogs) {
+                        if (backlog.getAssigneeId() == null)
+                                continue;
+
+                        String email;
+                        try {
+                                email = authenticationGrpcRepository.findUser(backlog.getAssigneeId()).getEmail();
+                        } catch (Exception e) {
+                                continue; // Skip if user info is unavailable
+                        }
+
+                        UserWorkItemSummaryResponse summary = summaryMap.getOrDefault(
+                                        email,
+                                        UserWorkItemSummaryResponse.builder()
+                                                        .email(email)
+                                                        .todo(0)
+                                                        .inProgress(0)
+                                                        .done(0)
+                                                        .build());
+
+                        switch (backlog.getStatus()) {
+                                case TODO -> summary.setTodo(summary.getTodo() + 1);
+                                case INPROGRESS -> summary.setInProgress(summary.getInProgress() + 1);
+                                case DONE -> summary.setDone(summary.getDone() + 1);
+                        }
+
+                        summaryMap.put(email, summary);
+                }
+
+                return new ArrayList<>(summaryMap.values());
+        }
+
 }

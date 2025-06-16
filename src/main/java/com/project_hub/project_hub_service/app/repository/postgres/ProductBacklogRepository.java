@@ -1,5 +1,6 @@
 package com.project_hub.project_hub_service.app.repository.postgres;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -55,5 +56,9 @@ public interface ProductBacklogRepository extends JpaRepository<ProductBacklog, 
   List<ProductBacklog> findByProductGoalId(String productGoalId);
 
   List<ProductBacklog> findBySprintIdAndStatusNot(String sprintId, ProductBacklogStatus status);
+
+  List<ProductBacklog> findBySprintIdIn(List<String> sprintIds);
+
+  List<ProductBacklog> findBySprintIdInAndUpdatedAtAfter(List<String> sprintIds, LocalDateTime after);
 
 }

@@ -26,10 +26,12 @@ import com.project_hub.project_hub_service.app.dtos.req.AddProjectDeveloperReque
 import com.project_hub.project_hub_service.app.dtos.req.AddScrumMasterRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProjectRequest;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
+import com.project_hub.project_hub_service.app.dtos.res.ProjectBacklogSummaryResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectInvitationResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectSummaryResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectUserResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
+import com.project_hub.project_hub_service.app.dtos.res.UserWorkItemSummaryResponse;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.ProjectInvitation;
 import com.project_hub.project_hub_service.app.usecase.ProductBacklogUseCase;
@@ -348,6 +350,26 @@ public class ProjectController {
                 List<ProjectUserResponse> members = projectUseCase.getProjectMembersByRole(projectId, projectRole);
                 BaseResponse<List<ProjectUserResponse>> response = new BaseResponse<>(
                                 "success", "Project members retrieved", members);
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/{projectId}/backlog_summary")
+        public ResponseEntity<BaseResponse<ProjectBacklogSummaryResponse>> getProjectSummary(
+                        @PathVariable String projectId) {
+                ProjectBacklogSummaryResponse summary = productBacklogUseCase.getProjectBacklogSummary(projectId);
+                BaseResponse<ProjectBacklogSummaryResponse> response = new BaseResponse<>(
+                                "success", "Project backlog summary retrieved", summary);
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/{projectId}/work_summary")
+        public ResponseEntity<BaseResponse<List<UserWorkItemSummaryResponse>>> getWorkSummaryByProject(
+                        @PathVariable String projectId,
+                        @RequestParam(defaultValue = "7d") String range) {
+                List<UserWorkItemSummaryResponse> summary = productBacklogUseCase
+                                .getWorkSummaryByTeamAndDateRange(projectId, range);
+                BaseResponse<List<UserWorkItemSummaryResponse>> response = new BaseResponse<>(
+                                "success", "User work summary retrieved", summary);
                 return ResponseEntity.ok(response);
         }
 

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.project_hub.project_hub_service.app.dtos.req.AssignBacklogUserRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProductBacklogRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogGoalRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogPointRequest;
@@ -162,6 +163,21 @@ public class ProductBacklogController {
                 BaseResponse<ProductBacklogResponse> response = new BaseResponse<>(
                                 "success",
                                 "Backlog goal updated successfully",
+                                updatedBacklog);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @PutMapping("/assign_user")
+        @Operation(summary = "Assign a user to a backlog item")
+        public ResponseEntity<BaseResponse<ProductBacklogResponse>> assignUserToBacklog(
+                        @Validated @RequestBody AssignBacklogUserRequest dto) {
+
+                ProductBacklogResponse updatedBacklog = productBacklogUseCase.assignUserToBacklog(dto);
+
+                BaseResponse<ProductBacklogResponse> response = new BaseResponse<>(
+                                "success",
+                                "User assigned to backlog successfully",
                                 updatedBacklog);
 
                 return ResponseEntity.ok(response);
