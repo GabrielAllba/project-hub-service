@@ -61,4 +61,6 @@ public interface ProductBacklogRepository extends JpaRepository<ProductBacklog, 
 
   List<ProductBacklog> findBySprintIdInAndUpdatedAtAfter(List<String> sprintIds, LocalDateTime after);
 
+  List<ProductBacklog> findBySprintId(String sprintId);
+
 }

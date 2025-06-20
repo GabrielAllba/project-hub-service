@@ -3,6 +3,10 @@ package com.project_hub.project_hub_service.app.usecase;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -18,9 +22,13 @@ import com.project_hub.project_hub_service.app.constants.SprintStatus;
 import com.project_hub.project_hub_service.app.dtos.req.CreateSprintRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditSprintGoalAndDatesRequest;
 import com.project_hub.project_hub_service.app.dtos.res.CompleteSprintInfoResponse;
+import com.project_hub.project_hub_service.app.dtos.res.SprintOverviewResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
+import com.project_hub.project_hub_service.app.dtos.res.UserTaskDistributionResponse;
+import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.Sprint;
+import com.project_hub.project_hub_service.app.repository.gRpc.AuthenticationGrpcRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProductBacklogRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectProductOwnerRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectRepository;
@@ -45,9 +53,20 @@ public class SprintUseCase {
         @Autowired
         private ProjectScrumMasterRepository projectScrumMasterRepository;
 
+        @Autowired
+        private AuthenticationGrpcRepository authenticationGrpcRepository;
+
         public SprintResponse create(CreateSprintRequest request) {
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                String requesterId = authentication.getPrincipal().toString();
+
                 Project project = projectRepository.findById(request.getProjectId())
                                 .orElseThrow(() -> new IllegalArgumentException("Project not found"));
+
+                if (!isUserAuthorized(project, requesterId)) {
+                        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                                        "You are not authorized to create sprint, only the product owner & scrum master of this project  can create sprint.");
+                }
 
                 Sprint sprint = Sprint.builder()
                                 .project(project)
@@ -148,15 +167,19 @@ public class SprintUseCase {
                                 .build());
         }
 
-        public Page<SprintResponse> getPaginatedSprintsTimelineByProjectId(String projectId, Pageable pageable) {
+        public Page<SprintResponse> getPaginatedSprintsTimelineByProjectIdAndYear(String projectId, int year,
+                        Pageable pageable) {
                 if (!projectRepository.existsById(projectId)) {
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
                 }
 
-                Page<Sprint> sprintPage = sprintRepository.findWithStartAndEndDates(projectId, pageable);
+                LocalDateTime start = LocalDateTime.of(year, 1, 1, 0, 0);
+                LocalDateTime end = LocalDateTime.of(year, 12, 31, 23, 59, 59);
+
+                Page<Sprint> sprintPage = sprintRepository.findWithDateRangeAndPagination(projectId, start, end,
+                                pageable);
 
                 DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE;
-
                 return sprintPage.map(sprint -> SprintResponse.builder()
                                 .id(sprint.getId())
                                 .projectId(sprint.getProject().getId())
@@ -209,7 +232,7 @@ public class SprintUseCase {
 
                 if (!isUserAuthorized(sprint.getProject(), requesterId)) {
                         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                                        "You are not authorized to edit this sprint");
+                                        "You are not authorized to edit this sprint, only the product owner & scrum master can edit this sprint");
                 }
 
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
@@ -263,7 +286,7 @@ public class SprintUseCase {
 
                 if (!isUserAuthorized(sprint.getProject(), requesterId)) {
                         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                                        "You are not authorized to start this sprint");
+                                        "You are not authorized to start this sprint, only the product owner & scrum master of this project can start this sprint.");
                 }
 
                 sprint.setStatus(SprintStatus.IN_PROGRESS);
@@ -325,11 +348,11 @@ public class SprintUseCase {
 
                 if (!isUserAuthorized(sprint.getProject(), requesterId)) {
                         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                                        "You are not authorized to start this sprint");
+                                        "You are not authorized to complete this sprint, only the product owner & scrum master of this project can complete this sprint.");
                 }
 
                 sprint.setStatus(SprintStatus.COMPLETED);
-                sprint.setStartDate(LocalDateTime.now());
+                sprint.setEndDate(LocalDateTime.now());
 
                 Sprint saved = sprintRepository.save(sprint);
 
@@ -367,6 +390,63 @@ public class SprintUseCase {
                                 .createdAt(sprint.getCreatedAt().toString())
                                 .updatedAt(sprint.getUpdatedAt().toString())
                                 .build());
+        }
+
+        public SprintOverviewResponse getSprintOverview(String sprintId) {
+                Sprint sprint = sprintRepository.findById(sprintId)
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                "Sprint not found"));
+
+                List<ProductBacklog> backlogs = sprint.getProductBacklogs();
+
+                int totalTasks = backlogs.size();
+                int completedTasks = 0;
+                int totalPoints = 0;
+                int completedPoints = 0;
+
+                for (ProductBacklog backlog : backlogs) {
+                        totalPoints += backlog.getPoint();
+                        if (backlog.getStatus() == ProductBacklogStatus.DONE) {
+                                completedTasks++;
+                                completedPoints += backlog.getPoint();
+                        }
+                }
+
+                return SprintOverviewResponse.builder()
+                                .startDate(sprint.getStartDate())
+                                .endDate(sprint.getEndDate())
+                                .sprintGoal(sprint.getSprintGoal())
+                                .totalTasks(totalTasks)
+                                .completedTasks(completedTasks)
+                                .status(sprint.getStatus())
+                                .totalPoints(totalPoints)
+                                .completedPoints(completedPoints)
+                                .build();
+        }
+
+        public List<UserTaskDistributionResponse> getTaskDistributionBySprint(String sprintId) {
+                List<ProductBacklog> items = productBacklogRepository.findBySprintId(sprintId);
+                Map<String, UserTaskDistributionResponse> distributionMap = new HashMap<>();
+
+                for (ProductBacklog item : items) {
+                        String userId = item.getAssigneeId() != null ? item.getAssigneeId() : "unassigned";
+                        String name = userId.equals("unassigned") ? "Unassigned"
+                                        : authenticationGrpcRepository.findUser(userId).getUsername();
+
+                        distributionMap.putIfAbsent(userId, new UserTaskDistributionResponse(
+                                        userId, name, 0, 0, 0, 0));
+
+                        UserTaskDistributionResponse dist = distributionMap.get(userId);
+
+                        dist.setTotalTasks(dist.getTotalTasks() + 1);
+                        switch (item.getStatus()) {
+                                case DONE -> dist.setDoneTasks(dist.getDoneTasks() + 1);
+                                case INPROGRESS -> dist.setInProgressTasks(dist.getInProgressTasks() + 1);
+                                case TODO -> dist.setTodoTasks(dist.getTodoTasks() + 1);
+                        }
+                }
+
+                return new ArrayList<>(distributionMap.values());
         }
 
 }

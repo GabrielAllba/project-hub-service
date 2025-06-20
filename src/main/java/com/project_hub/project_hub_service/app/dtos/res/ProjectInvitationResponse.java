@@ -21,8 +21,10 @@ public class ProjectInvitationResponse {
     private InvitationStatus status;
     private String invitationId;
     private String inviterId;
+    private String inviterUsername;
     private String inviteeId;
     private String projectId;
+    private String projectName;
     private ProjectRole role;
 
 }

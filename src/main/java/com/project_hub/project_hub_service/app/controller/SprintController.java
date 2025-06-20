@@ -23,7 +23,9 @@ import com.project_hub.project_hub_service.app.dtos.req.CreateSprintRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditSprintGoalAndDatesRequest;
 import com.project_hub.project_hub_service.app.dtos.res.CompleteSprintInfoResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
+import com.project_hub.project_hub_service.app.dtos.res.SprintOverviewResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
+import com.project_hub.project_hub_service.app.dtos.res.UserTaskDistributionResponse;
 import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 import com.project_hub.project_hub_service.app.usecase.ProductBacklogUseCase;
 import com.project_hub.project_hub_service.app.usecase.SprintUseCase;
@@ -174,6 +176,31 @@ public class SprintController {
                                 "success",
                                 "Sprints retrieved successfully",
                                 results);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/{sprintId}/overview")
+        @Operation(summary = "Get sprint overview info")
+        public ResponseEntity<BaseResponse<SprintOverviewResponse>> getSprintOverview(@PathVariable String sprintId) {
+                SprintOverviewResponse overview = sprintUseCase.getSprintOverview(sprintId);
+
+                BaseResponse<SprintOverviewResponse> response = new BaseResponse<>(
+                                "success",
+                                "Sprint overview retrieved successfully",
+                                overview);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/{sprintId}/task_distribution")
+        public ResponseEntity<BaseResponse<List<UserTaskDistributionResponse>>> getTaskDistribution(
+                        @PathVariable String sprintId) {
+                List<UserTaskDistributionResponse> overview = sprintUseCase.getTaskDistributionBySprint(sprintId);
+                BaseResponse<List<UserTaskDistributionResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Sprint overview retrieved successfully",
+                                overview);
 
                 return ResponseEntity.ok(response);
         }

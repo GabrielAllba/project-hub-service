@@ -67,33 +67,55 @@ public class ProjectUseCase {
     private ProjectScrumMasterRepository projectScrumMasterRepository;
 
     @Transactional
-    public Project create(CreateProjectRequest request) {
+    public ProjectSummaryResponse create(CreateProjectRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String userId = authentication.getPrincipal().toString();
 
         Project project = Project.builder()
                 .name(request.getName())
-                .description(request.getDescription())
                 .build();
 
         Project saved = projectRepository.save(project);
 
-        // Save the creator as product owner
         ProjectProductOwner owner = ProjectProductOwner.builder()
                 .project(saved)
                 .userId(userId)
                 .build();
         projectProductOwnerRepository.save(owner);
 
-        return saved;
+        return ProjectSummaryResponse.builder()
+                .projectId(saved.getId())
+                .name(saved.getName())
+                .userRole(ProjectRole.PRODUCT_OWNER) 
+                .build();
     }
 
-    public Project getProjectById(String projectId) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Project not found"));
+    public ProjectSummaryResponse getProjectById(String projectId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String userId = authentication.getPrincipal().toString();
 
-        return project;
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+
+        ProjectRole userRole = getUserRoleInProject(project, userId);
+
+        return ProjectSummaryResponse.builder()
+                .projectId(project.getId())
+                .name(project.getName())
+                .userRole(userRole)
+                .build();
+    }
+
+    private ProjectRole getUserRoleInProject(Project project, String userId) {
+        if (projectProductOwnerRepository.existsByProjectIdAndUserId(project.getId(), userId)) {
+            return ProjectRole.PRODUCT_OWNER;
+        } else if (projectScrumMasterRepository.existsByProjectIdAndUserId(project.getId(), userId)) {
+            return ProjectRole.SCRUM_MASTER;
+        } else if (projectDeveloperRepository.existsByProjectIdAndUserId(project.getId(), userId)) {
+            return ProjectRole.DEVELOPER;
+        } else {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not a member of this project");
+        }
     }
 
     public List<ProjectInvitation> inviteDevelopers(String projectId, AddProjectDeveloperRequest request) {
@@ -380,7 +402,6 @@ public class ProjectUseCase {
         return projects.map(p -> ProjectSummaryResponse.builder()
                 .projectId(p.getId())
                 .name(p.getName())
-                .description(p.getDescription())
                 .userRole(roles.get(p.getId()))
                 .build());
     }
@@ -409,14 +430,32 @@ public class ProjectUseCase {
     public Page<ProjectInvitationResponse> getProjectInvitationsByUserId(String userId, Pageable pageable) {
         Page<ProjectInvitation> invitations = projectInvitationRepository.findByInviteeId(userId, pageable);
 
+        // Cache inviter usernames
+        Map<String, String> inviterUsernameMap = new HashMap<>();
+        Set<String> inviterIds = invitations.stream()
+                .map(ProjectInvitation::getInviterId)
+                .collect(Collectors.toSet());
+
+        for (String inviterId : inviterIds) {
+            try {
+                FindUserResponse inviterUser = findUserOrThrow(inviterId);
+                inviterUsernameMap.put(inviterId, inviterUser.getUsername());
+            } catch (Exception e) {
+                inviterUsernameMap.put(inviterId, "Unknown");
+            }
+        }
+
+        // Map to response
         return invitations.map(inv -> ProjectInvitationResponse.builder()
                 .id(inv.getId())
                 .acceptedAt(inv.getAcceptedAt())
                 .role(inv.getRole())
                 .invitationId(inv.getId())
                 .projectId(inv.getProject().getId())
+                .projectName(inv.getProject().getName())
                 .inviterId(inv.getInviterId())
                 .inviteeId(inv.getInviteeId())
+                .inviterUsername(inviterUsernameMap.getOrDefault(inv.getInviterId(), "Unknown"))
                 .status(inv.getStatus())
                 .invitedAt(inv.getInvitedAt())
                 .build());
@@ -431,14 +470,24 @@ public class ProjectUseCase {
 
         ProjectInvitation invitation = optionalInvitation.get();
 
+        String inviterUsername;
+        try {
+            FindUserResponse inviterUser = findUserOrThrow(invitation.getInviterId());
+            inviterUsername = inviterUser.getUsername();
+        } catch (Exception e) {
+            inviterUsername = "Unknown";
+        }
+
         return ProjectInvitationResponse.builder()
                 .id(invitation.getId())
                 .acceptedAt(invitation.getAcceptedAt())
                 .role(invitation.getRole())
                 .invitationId(invitation.getId())
                 .projectId(invitation.getProject().getId())
+                .projectName(invitation.getProject().getName())
                 .inviterId(invitation.getInviterId())
                 .inviteeId(invitation.getInviteeId())
+                .inviterUsername(inviterUsername)
                 .status(invitation.getStatus())
                 .invitedAt(invitation.getInvitedAt())
                 .build();

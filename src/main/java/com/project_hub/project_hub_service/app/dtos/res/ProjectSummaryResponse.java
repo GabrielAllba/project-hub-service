@@ -14,6 +14,5 @@ import lombok.NoArgsConstructor;
 public class ProjectSummaryResponse {
     private String projectId;
     private String name;
-    private String description;
     private ProjectRole userRole; 
 }

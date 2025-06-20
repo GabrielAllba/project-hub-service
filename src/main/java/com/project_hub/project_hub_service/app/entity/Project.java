@@ -32,8 +32,6 @@ public class Project {
 
     private String name;
 
-    private String description;
-
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

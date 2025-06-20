@@ -60,10 +60,10 @@ public class ProjectController {
 
         @PostMapping
         @Operation(summary = "Create a new project")
-        public ResponseEntity<BaseResponse<Project>> createProject(@Validated @RequestBody CreateProjectRequest dto) {
-                Project project = projectUseCase.create(dto);
+        public ResponseEntity<BaseResponse<ProjectSummaryResponse>> createProject(@Validated @RequestBody CreateProjectRequest dto) {
+                ProjectSummaryResponse project = projectUseCase.create(dto);
 
-                BaseResponse<Project> response = new BaseResponse<>(
+                BaseResponse<ProjectSummaryResponse> response = new BaseResponse<>(
                                 "success",
                                 "Project created successfully",
                                 project);
@@ -73,10 +73,10 @@ public class ProjectController {
 
         @GetMapping("/{projectId}")
         @Operation(summary = "Get a project by ID")
-        public ResponseEntity<BaseResponse<Project>> getProjectById(@PathVariable String projectId) {
-                Project project = projectUseCase.getProjectById(projectId);
+        public ResponseEntity<BaseResponse<ProjectSummaryResponse>> getProjectById(@PathVariable String projectId) {
+                ProjectSummaryResponse project = projectUseCase.getProjectById(projectId);
 
-                BaseResponse<Project> response = new BaseResponse<>(
+                BaseResponse<ProjectSummaryResponse> response = new BaseResponse<>(
                                 "success",
                                 "Project retrieved successfully",
                                 project);
@@ -280,22 +280,20 @@ public class ProjectController {
         }
 
         @GetMapping("/{projectId}/sprints/timeline")
-        @Operation(summary = "Get paginated timeline sprints where the project is projectId")
+        @Operation(summary = "Get paginated timeline sprints for a given project and year")
         public ResponseEntity<BaseResponse<Page<SprintResponse>>> getProjectSprintsTimeline(
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(defaultValue = "10") int size,
+                        @RequestParam int year, // 👈 NEW
                         @PathVariable String projectId) {
 
-                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-                Page<SprintResponse> sprints = sprintUseCase.getPaginatedSprintsTimelineByProjectId(projectId,
-                                pageable);
+                Pageable pageable = PageRequest.of(page, size, Sort.by("startDate").ascending());
 
-                BaseResponse<Page<SprintResponse>> response = new BaseResponse<>(
-                                "success",
-                                "Sprints retrieved successfully",
-                                sprints);
+                Page<SprintResponse> sprints = sprintUseCase.getPaginatedSprintsTimelineByProjectIdAndYear(projectId,
+                                year, pageable);
 
-                return ResponseEntity.ok(response);
+                return ResponseEntity.ok(
+                                new BaseResponse<>("success", "Sprints retrieved successfully", sprints));
         }
 
         @GetMapping("/{projectId}/product_backlogs")
