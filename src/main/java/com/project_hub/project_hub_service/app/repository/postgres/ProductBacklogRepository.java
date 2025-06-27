@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.lang.Nullable;
 
 import com.project_hub.project_hub_service.app.constants.ProductBacklogStatus;
+import com.project_hub.project_hub_service.app.constants.SprintStatus;
 import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 
 public interface ProductBacklogRepository extends JpaRepository<ProductBacklog, String> {
@@ -62,5 +63,23 @@ public interface ProductBacklogRepository extends JpaRepository<ProductBacklog, 
   List<ProductBacklog> findBySprintIdInAndUpdatedAtAfter(List<String> sprintIds, LocalDateTime after);
 
   List<ProductBacklog> findBySprintId(String sprintId);
+
+  void deleteByProjectId(String projectId);
+
+  Page<ProductBacklog> findBySprintStatusAndAssigneeId(SprintStatus status, String assigneeId, Pageable pageable);
+
+  List<ProductBacklog> findByProjectId(String projectId);
+
+  @Query("SELECT COUNT(pb) FROM ProductBacklog pb WHERE pb.sprint.id = :sprintId AND pb.assigneeId = :userId")
+  int countBySprintIdAndAssigneeId(@Param("sprintId") String sprintId, @Param("userId") String userId);
+
+  @Query("SELECT COUNT(pb) FROM ProductBacklog pb WHERE pb.productGoal.id = :goalId AND pb.status = 'TODO'")
+  int countTodoByProductGoal(@Param("goalId") String goalId);
+
+  @Query("SELECT COUNT(pb) FROM ProductBacklog pb WHERE pb.productGoal.id = :goalId AND pb.status = 'INPROGRESS'")
+  int countInProgressByProductGoal(@Param("goalId") String goalId);
+
+  @Query("SELECT COUNT(pb) FROM ProductBacklog pb WHERE pb.productGoal.id = :goalId AND pb.status = 'DONE'")
+  int countDoneByProductGoal(@Param("goalId") String goalId);
 
 }

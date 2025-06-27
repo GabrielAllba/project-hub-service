@@ -1,6 +1,10 @@
 package com.project_hub.project_hub_service.app.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -10,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.project_hub.project_hub_service.app.dtos.req.AssignBacklogUserRequest;
@@ -20,6 +25,7 @@ import com.project_hub.project_hub_service.app.dtos.req.EditBacklogPriorityReque
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogStatusRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogTitleRequest;
 import com.project_hub.project_hub_service.app.dtos.req.ReorderProductBacklogRequest;
+import com.project_hub.project_hub_service.app.dtos.res.GetMyActiveProductBacklogResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
 import com.project_hub.project_hub_service.app.usecase.ProductBacklogUseCase;
 import com.project_hub.project_hub_service.misc.BaseResponse;
@@ -119,6 +125,23 @@ public class ProductBacklogController {
                                 "success",
                                 "Backlog priority updated successfully",
                                 updatedBacklog);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/my/active_sprint")
+        @Operation(summary = "Get paginated product backlogs in IN_PROGRESS sprints assigned to the current user")
+        public ResponseEntity<BaseResponse<Page<GetMyActiveProductBacklogResponse>>> getMyBacklogsFromActiveSprints(
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<GetMyActiveProductBacklogResponse> backlogs = productBacklogUseCase.getMyBacklogsFromActiveSprints(pageable);
+
+                BaseResponse<Page<GetMyActiveProductBacklogResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Your active sprint backlogs retrieved successfully",
+                                backlogs);
 
                 return ResponseEntity.ok(response);
         }

@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.project_hub.project_hub_service.app.constants.BacklogActivityType;
 import com.project_hub.project_hub_service.app.constants.ProductBacklogPriority;
 import com.project_hub.project_hub_service.app.constants.ProductBacklogStatus;
 import com.project_hub.project_hub_service.app.constants.SprintStatus;
@@ -30,14 +31,17 @@ import com.project_hub.project_hub_service.app.dtos.req.EditBacklogPointRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogPriorityRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogStatusRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditBacklogTitleRequest;
+import com.project_hub.project_hub_service.app.dtos.res.GetMyActiveProductBacklogResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectBacklogSummaryResponse;
 import com.project_hub.project_hub_service.app.dtos.res.UserWorkItemSummaryResponse;
+import com.project_hub.project_hub_service.app.entity.BacklogActivityLog;
 import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 import com.project_hub.project_hub_service.app.entity.ProductGoal;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.Sprint;
 import com.project_hub.project_hub_service.app.repository.gRpc.AuthenticationGrpcRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.BacklogActivityLogRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProductBacklogRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProductGoalRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectDeveloperRepository;
@@ -46,6 +50,7 @@ import com.project_hub.project_hub_service.app.repository.postgres.ProjectReposi
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectScrumMasterRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.SprintRepository;
 
+import authenticationservice.AuthenticationServiceOuterClass.FindUserResponse;
 import jakarta.annotation.Nullable;
 
 @Service
@@ -74,6 +79,9 @@ public class ProductBacklogUseCase {
 
         @Autowired
         private AuthenticationGrpcRepository authenticationGrpcRepository;
+
+        @Autowired
+        private BacklogActivityLogRepository backlogActivityLogRepository;
 
         public ProductBacklogResponse create(String projectId, CreateProductBacklogRequest request) {
                 Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -119,6 +127,20 @@ public class ProductBacklogUseCase {
 
                 ProductBacklog saved = productBacklogRepository.save(productBacklog);
 
+                FindUserResponse user = findUserOrThrow(productBacklog.getAssigneeId());
+
+                BacklogActivityLog activityLog = BacklogActivityLog.builder()
+                                .backlog(productBacklog)
+                                .userId(requesterId)
+                                .activityType(BacklogActivityType.BACKLOG_CREATED)
+                                .description("Backlog '" + saved.getTitle() + "' was created by " + user.getUsername()
+                                                + ".")
+                                .oldValue(null)
+                                .newValue(saved.getTitle())
+                                .build();
+
+                backlogActivityLogRepository.save(activityLog);
+
                 return ProductBacklogResponse.builder()
                                 .id(saved.getId())
                                 .title(saved.getTitle())
@@ -129,14 +151,23 @@ public class ProductBacklogUseCase {
                                 .creatorId(saved.getCreatorId())
                                 .assigneeId(saved.getAssigneeId())
                                 .createdAt(saved.getCreatedAt())
-                                .productGoalId(null)
+                                .productGoalId(null) // Assuming productGoal is handled separately or can be null
+                                                     // initially
                                 .updatedAt(saved.getUpdatedAt())
-                                .prevBacklogId(lastBacklog != null ? lastBacklog.getId() : null)
                                 .point(saved.getPoint())
+                                .prevBacklogId(lastBacklog != null ? lastBacklog.getId() : null)
                                 .build();
         }
 
-        public Page<ProductBacklogResponse> getPaginatedBacklogsByProjectId(String projectId, Pageable pageable) {
+        public Page<ProductBacklogResponse> getPaginatedBacklogsByProjectId(
+                        String projectId,
+                        String search,
+                        ProductBacklogStatus status,
+                        ProductBacklogPriority priority,
+                        List<String> productGoalId,
+                        List<String> assigneeIds,
+                        Pageable pageable) {
+
                 Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
                 String requesterId = authentication.getPrincipal().toString();
 
@@ -150,26 +181,53 @@ public class ProductBacklogUseCase {
                                         "You are not authorized to get a backlog for this project");
                 }
 
-                Optional<Project> projectExists = projectRepository.findById(projectId);
-                if (!projectExists.isPresent()) {
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
-                }
+                Project project = projectRepository.findById(projectId)
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                "Project not found"));
 
+                // Get all backlogs in order
                 List<ProductBacklog> orderedBacklogs = getBacklogsOrderedByPrevBacklog(projectId, null);
 
-                int start = (int) pageable.getOffset();
-                int end = Math.min(start + pageable.getPageSize(), orderedBacklogs.size());
+                boolean includeNoGoal = productGoalId != null && productGoalId.contains("no-goal");
 
-                if (start > end) {
-                        return new PageImpl<>(Collections.emptyList(), pageable, orderedBacklogs.size());
+                // Apply filtering
+                List<ProductBacklog> filtered = orderedBacklogs.stream()
+                                .filter(b -> search == null
+                                                || b.getTitle().toLowerCase().contains(search.toLowerCase()))
+                                .filter(b -> status == null || b.getStatus() == status)
+                                .filter(b -> priority == null || b.getPriority() == priority)
+                                .filter(b -> {
+                                        if (productGoalId == null || productGoalId.isEmpty()) {
+                                                return true;
+                                        }
+                                        if (b.getProductGoal() == null) {
+                                                return includeNoGoal;
+                                        }
+                                        return productGoalId.contains(b.getProductGoal().getId());
+                                })
+                                .filter(b -> {
+                                        if (assigneeIds == null || assigneeIds.isEmpty()) {
+                                                return true;
+                                        }
+                                        return assigneeIds.contains(b.getAssigneeId());
+                                })
+                                .collect(Collectors.toList());
+
+                // Apply pagination
+                int start = (int) pageable.getOffset();
+                int end = Math.min(start + pageable.getPageSize(), filtered.size());
+
+                if (start >= filtered.size()) {
+                        return new PageImpl<>(Collections.emptyList(), pageable, filtered.size());
                 }
 
-                List<ProductBacklogResponse> paged = orderedBacklogs.subList(start, end).stream()
+                List<ProductBacklogResponse> paged = filtered.subList(start, end).stream()
                                 .map(backlog -> ProductBacklogResponse.builder()
                                                 .id(backlog.getId())
                                                 .title(backlog.getTitle())
                                                 .projectId(projectId)
-                                                .sprintId(null)
+                                                .sprintId(backlog.getSprint() != null ? backlog.getSprint().getId()
+                                                                : null)
                                                 .priority(backlog.getPriority())
                                                 .status(backlog.getStatus())
                                                 .creatorId(backlog.getCreatorId())
@@ -186,10 +244,18 @@ public class ProductBacklogUseCase {
                                                 .build())
                                 .collect(Collectors.toList());
 
-                return new PageImpl<>(paged, pageable, orderedBacklogs.size());
+                return new PageImpl<>(paged, pageable, filtered.size());
         }
 
-        public Page<ProductBacklogResponse> getPaginatedBacklogsBySprintId(String sprintId, Pageable pageable) {
+        public Page<ProductBacklogResponse> getPaginatedBacklogsBySprintId(
+                        String sprintId,
+                        String search,
+                        ProductBacklogStatus status,
+                        ProductBacklogPriority priority,
+                        List<String> productGoalId,
+                        List<String> assigneeIds,
+                        Pageable pageable) {
+
                 Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
                 String requesterId = authentication.getPrincipal().toString();
 
@@ -212,14 +278,36 @@ public class ProductBacklogUseCase {
                 List<ProductBacklog> allBacklogs = productBacklogRepository.findAllBySprintId(sprintId);
                 List<ProductBacklog> orderedBacklogs = orderBacklogsByPrevBacklog(allBacklogs);
 
-                int start = (int) pageable.getOffset();
-                int end = Math.min(start + pageable.getPageSize(), orderedBacklogs.size());
+                boolean includeNoGoal = productGoalId != null && productGoalId.contains("no-goal");
 
-                if (start > end) {
-                        return new PageImpl<>(Collections.emptyList(), pageable, orderedBacklogs.size());
+                // Apply filters
+                List<ProductBacklog> filtered = orderedBacklogs.stream()
+                                .filter(b -> search == null
+                                                || b.getTitle().toLowerCase().contains(search.toLowerCase()))
+                                .filter(b -> status == null || b.getStatus() == status)
+                                .filter(b -> priority == null || b.getPriority() == priority)
+                                .filter(b -> {
+                                        if (productGoalId == null || productGoalId.isEmpty())
+                                                return true;
+                                        if (b.getProductGoal() == null)
+                                                return includeNoGoal;
+                                        return productGoalId.contains(b.getProductGoal().getId());
+                                })
+                                .filter(b -> {
+                                        if (assigneeIds == null || assigneeIds.isEmpty())
+                                                return true;
+                                        return assigneeIds.contains(b.getAssigneeId());
+                                })
+                                .collect(Collectors.toList());
+
+                int start = (int) pageable.getOffset();
+                int end = Math.min(start + pageable.getPageSize(), filtered.size());
+
+                if (start >= filtered.size()) {
+                        return new PageImpl<>(Collections.emptyList(), pageable, filtered.size());
                 }
 
-                List<ProductBacklogResponse> paged = orderedBacklogs.subList(start, end).stream()
+                List<ProductBacklogResponse> paged = filtered.subList(start, end).stream()
                                 .map(backlog -> ProductBacklogResponse.builder()
                                                 .id(backlog.getId())
                                                 .title(backlog.getTitle())
@@ -239,7 +327,7 @@ public class ProductBacklogUseCase {
                                                 .build())
                                 .collect(Collectors.toList());
 
-                return new PageImpl<>(paged, pageable, orderedBacklogs.size());
+                return new PageImpl<>(paged, pageable, filtered.size());
         }
 
         private List<ProductBacklog> orderBacklogsByPrevBacklog(List<ProductBacklog> backlogs) {
@@ -320,6 +408,7 @@ public class ProductBacklogUseCase {
                         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                                         "You are not authorized to delete this backlog");
                 }
+
                 // Update backlink (unlink dari prevBacklog)
                 Optional<ProductBacklog> nextBacklogOpt = productBacklogRepository.findByPrevBacklog(backlog);
                 if (nextBacklogOpt.isPresent()) {
@@ -328,6 +417,10 @@ public class ProductBacklogUseCase {
                         productBacklogRepository.save(nextBacklog);
                 }
 
+                // Hapus semua log aktivitas yang terkait backlog ini
+                backlogActivityLogRepository.deleteAllByBacklog(backlog);
+
+                // Hapus backlog-nya
                 productBacklogRepository.delete(backlog);
         }
 
@@ -378,7 +471,32 @@ public class ProductBacklogUseCase {
                                         "Invalid insert position. Must be between 0 and " + targetList.size());
                 }
 
+                String oldSprintName = backlogToMove.getSprint() != null ? backlogToMove.getSprint().getName()
+                                : "Backlog";
+                String newSprintName = targetSprint != null ? targetSprint.getName() : "Backlog";
                 insertIntoLinkedList(backlogToMove, targetList, insertPosition, targetSprint);
+
+                // Logging activity after successful reorder
+                FindUserResponse user = findUserOrThrow(requesterId);
+                String description = String.format(
+                                "Backlog '%s' was moved by %s from %s to %s at position %d.",
+                                backlogToMove.getTitle(),
+                                user.getUsername(),
+                                oldSprintName,
+                                newSprintName,
+                                insertPosition + 1 // +1 to make it 1-based index in log
+                );
+
+                BacklogActivityLog activityLog = BacklogActivityLog.builder()
+                                .backlog(backlogToMove)
+                                .userId(requesterId)
+                                .activityType(BacklogActivityType.BACKLOG_REORDERED)
+                                .description(description)
+                                .oldValue(oldSprintName)
+                                .newValue(newSprintName)
+                                .build();
+
+                backlogActivityLogRepository.save(activityLog);
         }
 
         private void insertIntoLinkedList(ProductBacklog backlogToMove, List<ProductBacklog> targetList,
@@ -463,129 +581,116 @@ public class ProductBacklogUseCase {
                                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                                                 "Backlog not found"));
 
-                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-                String requesterId = authentication.getPrincipal().toString();
+                validateBacklogEditPermission(backlog.getProject().getId());
 
-                boolean isProductOwner = projectProductOwnerRepository
-                                .existsByProjectIdAndUserId(backlog.getProject().getId(), requesterId);
-                boolean isScrumMaster = projectScrumMasterRepository
-                                .existsByProjectIdAndUserId(backlog.getProject().getId(), requesterId);
-                boolean isDeveloper = projectDeveloperRepository
-                                .existsByProjectIdAndUserId(backlog.getProject().getId(), requesterId);
-
-                if (!(isProductOwner || isScrumMaster || isDeveloper)) {
-                        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                                        "You are not authorized to edit this backlog");
-                }
-
-                // Update point
-
+                Integer oldPoint = backlog.getPoint();
                 backlog.setPoint(request.getPoint());
 
                 ProductBacklog saved = productBacklogRepository.save(backlog);
 
-                return ProductBacklogResponse.builder()
-                                .id(saved.getId())
-                                .title(saved.getTitle())
-                                .projectId(saved.getProject().getId())
-                                .sprintId(saved.getSprint() != null ? saved.getSprint().getId() : null)
-                                .priority(saved.getPriority())
-                                .status(saved.getStatus())
-                                .creatorId(saved.getCreatorId())
-                                .assigneeId(saved.getAssigneeId())
-                                .createdAt(saved.getCreatedAt())
-                                .updatedAt(saved.getUpdatedAt())
-                                .prevBacklogId(saved.getPrevBacklog() != null ? saved.getPrevBacklog().getId() : null)
-                                .point(saved.getPoint())
-                                .productGoalId(saved.getProductGoal() != null ? saved.getProductGoal().getId()
-                                                : null)
-                                .build();
+                backlogActivityLogRepository.save(
+                                BacklogActivityLog.builder()
+                                                .backlog(saved)
+                                                .userId(getCurrentUserId())
+                                                .activityType(BacklogActivityType.POINT_CHANGE)
+                                                .oldValue(oldPoint != null ? String.valueOf(oldPoint) : null)
+                                                .newValue(String.valueOf(request.getPoint()))
+                                                .description("Point changed from " + oldPoint + " to "
+                                                                + request.getPoint())
+                                                .build());
+
+                return toBacklogResponse(saved);
         }
 
-        public ProductBacklogResponse editBacklogPriority(EditBacklogPriorityRequest dto) {
-                ProductBacklog backlog = productBacklogRepository.findById(dto.getBacklogId())
+        public ProductBacklogResponse editBacklogPriority(EditBacklogPriorityRequest request) {
+                ProductBacklog backlog = productBacklogRepository.findById(request.getBacklogId())
                                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                                                 "Backlog not found"));
 
-                backlog.setPriority(dto.getPriority());
+                validateBacklogEditPermission(backlog.getProject().getId());
+
+                ProductBacklogPriority oldPriority = backlog.getPriority();
+                backlog.setPriority(request.getPriority());
+
                 ProductBacklog saved = productBacklogRepository.save(backlog);
 
-                return ProductBacklogResponse.builder()
-                                .id(saved.getId())
-                                .title(saved.getTitle())
-                                .projectId(saved.getProject().getId())
-                                .sprintId(saved.getSprint() != null ? saved.getSprint().getId() : null)
-                                .priority(saved.getPriority())
-                                .status(saved.getStatus())
-                                .creatorId(saved.getCreatorId())
-                                .assigneeId(saved.getAssigneeId())
-                                .createdAt(saved.getCreatedAt())
-                                .updatedAt(saved.getUpdatedAt())
-                                .prevBacklogId(saved.getPrevBacklog() != null ? saved.getPrevBacklog().getId() : null)
-                                .point(saved.getPoint())
-                                .productGoalId(saved.getProductGoal() != null ? saved.getProductGoal().getId()
-                                                : null)
-                                .build();
+                backlogActivityLogRepository.save(
+                                BacklogActivityLog.builder()
+                                                .backlog(saved)
+                                                .userId(getCurrentUserId())
+                                                .activityType(BacklogActivityType.PRIORITY_CHANGE)
+                                                .oldValue(oldPriority.name())
+                                                .newValue(request.getPriority().name())
+                                                .description("Priority changed from " + oldPriority.name() + " to "
+                                                                + request.getPriority().name())
+                                                .build());
+
+                return toBacklogResponse(saved);
         }
 
-        public ProductBacklogResponse editBacklogStatus(EditBacklogStatusRequest dto) {
-                ProductBacklog backlog = productBacklogRepository.findById(dto.getBacklogId())
+        public ProductBacklogResponse editBacklogStatus(EditBacklogStatusRequest request) {
+                ProductBacklog backlog = productBacklogRepository.findById(request.getBacklogId())
                                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                                                 "Backlog not found"));
 
-                backlog.setStatus(dto.getStatus());
+                validateBacklogEditPermission(backlog.getProject().getId());
+
+                ProductBacklogStatus oldStatus = backlog.getStatus();
+                backlog.setStatus(request.getStatus());
+
                 ProductBacklog saved = productBacklogRepository.save(backlog);
 
-                return ProductBacklogResponse.builder()
-                                .id(saved.getId())
-                                .title(saved.getTitle())
-                                .projectId(saved.getProject().getId())
-                                .sprintId(saved.getSprint() != null ? saved.getSprint().getId() : null)
-                                .priority(saved.getPriority())
-                                .status(saved.getStatus())
-                                .creatorId(saved.getCreatorId())
-                                .assigneeId(saved.getAssigneeId())
-                                .createdAt(saved.getCreatedAt())
-                                .updatedAt(saved.getUpdatedAt())
-                                .prevBacklogId(saved.getPrevBacklog() != null ? saved.getPrevBacklog().getId() : null)
-                                .point(saved.getPoint())
-                                .productGoalId(saved.getProductGoal() != null ? saved.getProductGoal().getId()
-                                                : null)
-                                .build();
+                backlogActivityLogRepository.save(
+                                BacklogActivityLog.builder()
+                                                .backlog(saved)
+                                                .userId(getCurrentUserId())
+                                                .activityType(BacklogActivityType.STATUS_CHANGE)
+                                                .oldValue(oldStatus.name())
+                                                .newValue(request.getStatus().name())
+                                                .description("Status changed from " + oldStatus.name() + " to "
+                                                                + request.getStatus().name())
+                                                .build());
+
+                return toBacklogResponse(saved);
         }
 
-        public ProductBacklogResponse editBacklogTitle(EditBacklogTitleRequest dto) {
-                ProductBacklog backlog = productBacklogRepository.findById(dto.getBacklogId())
+        public ProductBacklogResponse editBacklogTitle(EditBacklogTitleRequest request) {
+                ProductBacklog backlog = productBacklogRepository.findById(request.getBacklogId())
                                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                                                 "Backlog not found"));
 
-                backlog.setTitle(dto.getTitle());
+                validateBacklogEditPermission(backlog.getProject().getId());
+
+                String oldTitle = backlog.getTitle();
+                backlog.setTitle(request.getTitle());
+
                 ProductBacklog saved = productBacklogRepository.save(backlog);
 
-                return ProductBacklogResponse.builder()
-                                .id(saved.getId())
-                                .title(saved.getTitle())
-                                .projectId(saved.getProject().getId())
-                                .sprintId(saved.getSprint() != null ? saved.getSprint().getId() : null)
-                                .priority(saved.getPriority())
-                                .status(saved.getStatus())
-                                .creatorId(saved.getCreatorId())
-                                .assigneeId(saved.getAssigneeId())
-                                .createdAt(saved.getCreatedAt())
-                                .updatedAt(saved.getUpdatedAt())
-                                .prevBacklogId(saved.getPrevBacklog() != null ? saved.getPrevBacklog().getId() : null)
-                                .point(saved.getPoint())
-                                .productGoalId(saved.getProductGoal() != null ? saved.getProductGoal().getId() : null)
-                                .build();
+                backlogActivityLogRepository.save(
+                                BacklogActivityLog.builder()
+                                                .backlog(saved)
+                                                .userId(getCurrentUserId())
+                                                .activityType(BacklogActivityType.TITLE_CHANGE)
+                                                .oldValue(oldTitle)
+                                                .newValue(request.getTitle())
+                                                .description("Title changed from '" + oldTitle + "' to '"
+                                                                + request.getTitle() + "'")
+                                                .build());
+
+                return toBacklogResponse(saved);
         }
 
-        public ProductBacklogResponse editBacklogGoal(EditBacklogGoalRequest dto) {
-                ProductBacklog backlog = productBacklogRepository.findById(dto.getBacklogId())
+        public ProductBacklogResponse editBacklogGoal(EditBacklogGoalRequest request) {
+                ProductBacklog backlog = productBacklogRepository.findById(request.getBacklogId())
                                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                                                 "Backlog not found"));
 
-                if (dto.getGoalId() != null) {
-                        ProductGoal goal = productGoalRepository.findById(dto.getGoalId())
+                validateBacklogEditPermission(backlog.getProject().getId());
+
+                String oldGoalTitle = backlog.getProductGoal() != null ? backlog.getProductGoal().getTitle() : null;
+
+                if (request.getGoalId() != null) {
+                        ProductGoal goal = productGoalRepository.findById(request.getGoalId())
                                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                                                         "Product goal not found"));
                         backlog.setProductGoal(goal);
@@ -594,23 +699,26 @@ public class ProductBacklogUseCase {
                 }
 
                 ProductBacklog saved = productBacklogRepository.save(backlog);
+                String newGoalTitle = saved.getProductGoal() != null ? saved.getProductGoal().getTitle() : null;
 
-                return ProductBacklogResponse.builder()
-                                .id(saved.getId())
-                                .title(saved.getTitle())
-                                .projectId(saved.getProject().getId())
-                                .sprintId(saved.getSprint() != null ? saved.getSprint().getId() : null)
-                                .priority(saved.getPriority())
-                                .status(saved.getStatus())
-                                .creatorId(saved.getCreatorId())
-                                .assigneeId(saved.getAssigneeId())
-                                .createdAt(saved.getCreatedAt())
-                                .updatedAt(saved.getUpdatedAt())
-                                .prevBacklogId(saved.getPrevBacklog() != null ? saved.getPrevBacklog().getId() : null)
-                                .point(saved.getPoint())
-                                .productGoalId(saved.getProductGoal() != null ? saved.getProductGoal().getId()
-                                                : null)
-                                .build();
+                backlogActivityLogRepository.save(
+                                BacklogActivityLog.builder()
+                                                .backlog(saved)
+                                                .userId(getCurrentUserId())
+                                                .activityType(BacklogActivityType.GOAL_CHANGE)
+                                                .oldValue(oldGoalTitle)
+                                                .newValue(newGoalTitle)
+                                                .description("Changed product goal from " +
+                                                                (oldGoalTitle != null ? "'" + oldGoalTitle + "'"
+                                                                                : "none")
+                                                                +
+                                                                " to " +
+                                                                (newGoalTitle != null ? "'" + newGoalTitle + "'"
+                                                                                : "none")
+                                                                + ".")
+                                                .build());
+
+                return toBacklogResponse(saved);
         }
 
         public List<ProductBacklog> finProductBacklogBySprintAndStatusNot(String sprintId,
@@ -629,7 +737,6 @@ public class ProductBacklogUseCase {
                 String projectId = backlog.getProject().getId();
                 String assigneeId = dto.getAssigneeId();
 
-                // Validasi bahwa user merupakan anggota tim
                 boolean isTeamMember = projectDeveloperRepository.existsByProjectIdAndUserId(projectId, assigneeId)
                                 || projectScrumMasterRepository.existsByProjectIdAndUserId(projectId, assigneeId)
                                 || projectProductOwnerRepository.existsByProjectIdAndUserId(projectId, assigneeId);
@@ -639,24 +746,27 @@ public class ProductBacklogUseCase {
                                         "User with id " + assigneeId + " is not a member of the project team");
                 }
 
+                String oldAssigneeId = backlog.getAssigneeId();
                 backlog.setAssigneeId(assigneeId);
                 ProductBacklog saved = productBacklogRepository.save(backlog);
 
-                return ProductBacklogResponse.builder()
-                                .id(saved.getId())
-                                .title(saved.getTitle())
-                                .projectId(projectId)
-                                .sprintId(saved.getSprint() != null ? saved.getSprint().getId() : null)
-                                .priority(saved.getPriority())
-                                .status(saved.getStatus())
-                                .creatorId(saved.getCreatorId())
-                                .assigneeId(saved.getAssigneeId())
-                                .createdAt(saved.getCreatedAt())
-                                .updatedAt(saved.getUpdatedAt())
-                                .point(saved.getPoint())
-                                .productGoalId(saved.getProductGoal() != null ? saved.getProductGoal().getId() : null)
-                                .prevBacklogId(saved.getPrevBacklog() != null ? saved.getPrevBacklog().getId() : null)
-                                .build();
+                // Fetch usernames for old and new assignee
+                String oldUsername = oldAssigneeId != null ? findUserOrThrow(oldAssigneeId).getUsername()
+                                : "Unassigned";
+                String newUsername = findUserOrThrow(assigneeId).getUsername();
+
+                backlogActivityLogRepository.save(
+                                BacklogActivityLog.builder()
+                                                .backlog(saved)
+                                                .userId(getCurrentUserId())
+                                                .activityType(BacklogActivityType.ASSIGNEE_CHANGE)
+                                                .oldValue(oldUsername)
+                                                .newValue(newUsername)
+                                                .description("Assignee changed from " + oldUsername + " to "
+                                                                + newUsername)
+                                                .build());
+
+                return toBacklogResponse(saved);
         }
 
         public ProjectBacklogSummaryResponse getProjectBacklogSummary(String projectId) {
@@ -709,7 +819,7 @@ public class ProductBacklogUseCase {
 
                 if (sprints.isEmpty()) {
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                        "No sprints found in the selected date range: start date: "+startDate);
+                                        "No sprints found in the selected date range: start date: " + startDate);
                 }
 
                 List<String> sprintIds = sprints.stream().map(Sprint::getId).toList();
@@ -750,6 +860,81 @@ public class ProductBacklogUseCase {
                 }
 
                 return new ArrayList<>(summaryMap.values());
+        }
+
+        public Page<GetMyActiveProductBacklogResponse> getMyBacklogsFromActiveSprints(Pageable pageable) {
+                String userId = getCurrentUserId();
+
+                Page<ProductBacklog> backlogs = productBacklogRepository
+                                .findBySprintStatusAndAssigneeId(SprintStatus.IN_PROGRESS, userId, pageable);
+
+                return backlogs.map(backlog -> GetMyActiveProductBacklogResponse.builder()
+                                .id(backlog.getId())
+                                .prevBacklogId(backlog.getPrevBacklog() != null ? backlog.getPrevBacklog().getId()
+                                                : null)
+                                .projectId(backlog.getProject() != null ? backlog.getProject().getId() : null)
+                                .projectName(backlog.getProject() != null ? backlog.getProject().getName() : null)
+                                .sprintId(backlog.getSprint() != null ? backlog.getSprint().getId() : null)
+                                .sprintName(backlog.getSprint() != null ? backlog.getSprint().getName() : null)
+                                .productGoalId(backlog.getProductGoal() != null ? backlog.getProductGoal().getId()
+                                                : null)
+                                .productGoalTitle(backlog.getProductGoal() != null ? backlog.getProductGoal().getTitle()
+                                                : null)
+                                .point(backlog.getPoint())
+                                .title(backlog.getTitle())
+                                .priority(backlog.getPriority())
+                                .status(backlog.getStatus())
+                                .creatorId(backlog.getCreatorId())
+                                .assigneeId(backlog.getAssigneeId())
+                                .createdAt(backlog.getCreatedAt())
+                                .updatedAt(backlog.getUpdatedAt())
+                                .build());
+        }
+
+        private String getCurrentUserId() {
+                return SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString();
+        }
+
+        private FindUserResponse findUserOrThrow(String userId) {
+                try {
+                        return authenticationGrpcRepository.findUser(userId);
+                } catch (Exception e) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                        "User with id " + userId + " not found");
+                }
+        }
+
+        private void validateBacklogEditPermission(String projectId) {
+                String userId = getCurrentUserId();
+
+                boolean isAuthorized = projectProductOwnerRepository.existsByProjectIdAndUserId(projectId, userId)
+                                || projectScrumMasterRepository.existsByProjectIdAndUserId(projectId, userId)
+                                || projectDeveloperRepository.existsByProjectIdAndUserId(projectId, userId);
+
+                if (!isAuthorized) {
+                        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                                        "You are not authorized to edit this backlog");
+                }
+        }
+
+        private ProductBacklogResponse toBacklogResponse(ProductBacklog backlog) {
+                return ProductBacklogResponse.builder()
+                                .id(backlog.getId())
+                                .title(backlog.getTitle())
+                                .projectId(backlog.getProject().getId())
+                                .sprintId(backlog.getSprint() != null ? backlog.getSprint().getId() : null)
+                                .priority(backlog.getPriority())
+                                .status(backlog.getStatus())
+                                .creatorId(backlog.getCreatorId())
+                                .assigneeId(backlog.getAssigneeId())
+                                .createdAt(backlog.getCreatedAt())
+                                .updatedAt(backlog.getUpdatedAt())
+                                .prevBacklogId(backlog.getPrevBacklog() != null ? backlog.getPrevBacklog().getId()
+                                                : null)
+                                .point(backlog.getPoint())
+                                .productGoalId(backlog.getProductGoal() != null ? backlog.getProductGoal().getId()
+                                                : null)
+                                .build();
         }
 
 }

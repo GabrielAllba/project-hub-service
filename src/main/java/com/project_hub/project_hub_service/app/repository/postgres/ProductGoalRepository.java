@@ -11,4 +11,7 @@ import com.project_hub.project_hub_service.app.entity.ProductGoal;
 public interface ProductGoalRepository extends JpaRepository<ProductGoal, String> {
 
     Page<ProductGoal> findByProjectId(String projectId, Pageable pageable);
+
+    void deleteByProjectId(String projectId);
+
 }

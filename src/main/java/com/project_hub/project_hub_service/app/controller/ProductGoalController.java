@@ -19,8 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.project_hub.project_hub_service.app.dtos.req.CreateProductGoalRequest;
 import com.project_hub.project_hub_service.app.dtos.req.RenameProductGoalRequest;
+import com.project_hub.project_hub_service.app.dtos.res.GetProductGoalByProjectResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProductGoalResponse;
-import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
 import com.project_hub.project_hub_service.app.usecase.ProductGoalUseCase;
 import com.project_hub.project_hub_service.misc.BaseResponse;
 
@@ -58,16 +58,16 @@ public class ProductGoalController {
 
     @GetMapping("/by_project/{projectId}")
     @Operation(summary = "Get product goals by project ID")
-    public ResponseEntity<BaseResponse<Page<ProductGoalResponse>>> getProductGoalsByProjectId(
+    public ResponseEntity<BaseResponse<Page<GetProductGoalByProjectResponse>>> getProductGoalsByProjectId(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @PathVariable String projectId) {
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
 
-        Page<ProductGoalResponse> productGoals = productGoalUseCase.getProductGoalsByProjectId(projectId, pageable);
+        Page<GetProductGoalByProjectResponse> productGoals = productGoalUseCase.getProductGoalsByProjectId(projectId, pageable);
 
-        BaseResponse<Page<ProductGoalResponse>> response = new BaseResponse<>(
+        BaseResponse<Page<GetProductGoalByProjectResponse>> response = new BaseResponse<>(
                 "success",
                 "Product goals retrieved successfully",
                 productGoals);

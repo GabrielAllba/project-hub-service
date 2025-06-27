@@ -1,5 +1,6 @@
 package com.project_hub.project_hub_service.app.repository.postgres;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,4 +15,9 @@ public interface ProjectProductOwnerRepository extends JpaRepository<ProjectProd
     List<ProjectProductOwner> findAllByProjectId(String projectId);
 
     boolean existsByProjectIdAndUserId(String projectId, String userId);
+
+    void deleteByProjectId(String projectId);
+
+    List<ProjectProductOwner> findAllByUserIdAndProject_IdIn(String userId, Collection<String> projectIds);
+
 }

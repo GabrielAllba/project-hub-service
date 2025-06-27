@@ -1,6 +1,5 @@
 package com.project_hub.project_hub_service.app.dtos.req;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,10 +10,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class EditBacklogTitleRequest {
+public class RenameProjectRequest {
     @NotNull
-    private String backlogId;
+    private String projectId;
 
-    @NotBlank(message = "Title must not be blank")
-    private String title;
+    @NotNull
+    private String name;
 }

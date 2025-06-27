@@ -28,20 +28,28 @@ import com.project_hub.project_hub_service.app.dtos.req.AddProductOwnerRequest;
 import com.project_hub.project_hub_service.app.dtos.req.AddProjectDeveloperRequest;
 import com.project_hub.project_hub_service.app.dtos.req.AddScrumMasterRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProjectRequest;
+import com.project_hub.project_hub_service.app.dtos.req.RenameProjectRequest;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectInvitationResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectSummaryResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectUserResponse;
+import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.ProjectDeveloper;
 import com.project_hub.project_hub_service.app.entity.ProjectInvitation;
 import com.project_hub.project_hub_service.app.entity.ProjectProductOwner;
 import com.project_hub.project_hub_service.app.entity.ProjectScrumMaster;
+import com.project_hub.project_hub_service.app.entity.UserProjectArchive;
 import com.project_hub.project_hub_service.app.repository.gRpc.AuthenticationGrpcRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.BacklogActivityLogRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.ProductBacklogRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.ProductGoalRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectDeveloperRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectInvitationRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectProductOwnerRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectScrumMasterRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.SprintRepository;
+import com.project_hub.project_hub_service.app.repository.postgres.UserProjectArchiveRepository;
 
 import authenticationservice.AuthenticationServiceOuterClass.FindUserResponse;
 
@@ -66,6 +74,21 @@ public class ProjectUseCase {
     @Autowired
     private ProjectScrumMasterRepository projectScrumMasterRepository;
 
+    @Autowired
+    private SprintRepository sprintRepository;
+
+    @Autowired
+    private ProductGoalRepository productGoalRepository;
+
+    @Autowired
+    private ProductBacklogRepository productBacklogRepository;
+
+    @Autowired
+    private BacklogActivityLogRepository backlogActivityLogRepository;
+
+    @Autowired
+    private UserProjectArchiveRepository userProjectArchiveRepository;
+
     @Transactional
     public ProjectSummaryResponse create(CreateProjectRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -86,8 +109,103 @@ public class ProjectUseCase {
         return ProjectSummaryResponse.builder()
                 .projectId(saved.getId())
                 .name(saved.getName())
-                .userRole(ProjectRole.PRODUCT_OWNER) 
+                .userRole(ProjectRole.PRODUCT_OWNER)
                 .build();
+    }
+
+    public Page<ProjectSummaryResponse> searchProjectsForUser(String keyword, Pageable pageable) {
+        String userId = getCurrentUserId();
+
+        List<String> projectIds = new ArrayList<>();
+        Map<String, ProjectRole> roles = new HashMap<>();
+
+        // Kumpulkan semua project yg diikuti user beserta rolenya
+        projectDeveloperRepository.findAllByUserId(userId).forEach(pd -> {
+            String pid = pd.getProject().getId();
+            projectIds.add(pid);
+            roles.put(pid, ProjectRole.DEVELOPER);
+        });
+
+        projectProductOwnerRepository.findAllByUserId(userId).forEach(po -> {
+            String pid = po.getProject().getId();
+            projectIds.add(pid);
+            roles.put(pid, ProjectRole.PRODUCT_OWNER);
+        });
+
+        projectScrumMasterRepository.findAllByUserId(userId).forEach(sm -> {
+            String pid = sm.getProject().getId();
+            projectIds.add(pid);
+            roles.put(pid, ProjectRole.SCRUM_MASTER);
+        });
+
+        // Ambil semua project yg sudah diarsipkan oleh user
+        List<String> archivedProjectIds = userProjectArchiveRepository
+                .findAllByUserIdAndProject_IdIn(userId, projectIds)
+                .stream()
+                .map(archive -> archive.getProject().getId())
+                .toList();
+
+        // Hapus yang diarsip dari daftar id
+        projectIds.removeAll(archivedProjectIds);
+
+        // Query project yg tersisa (belum di-archive)
+        Page<Project> projects = projectRepository
+                .findByIdInAndNameContainingIgnoreCase(projectIds, keyword, pageable);
+
+        // Mapping ke response
+        return projects.map(p -> ProjectSummaryResponse.builder()
+                .projectId(p.getId())
+                .name(p.getName())
+                .userRole(roles.get(p.getId()))
+                .build());
+    }
+
+    public Page<ProjectSummaryResponse> searchArchivedProjectsForUser(String keyword, Pageable pageable) {
+        String userId = getCurrentUserId();
+
+        List<String> projectIds = new ArrayList<>();
+        Map<String, ProjectRole> roles = new HashMap<>();
+
+        // Kumpulkan semua project yang diikuti user beserta rolenya
+        projectDeveloperRepository.findAllByUserId(userId).forEach(pd -> {
+            String pid = pd.getProject().getId();
+            projectIds.add(pid);
+            roles.put(pid, ProjectRole.DEVELOPER);
+        });
+
+        projectProductOwnerRepository.findAllByUserId(userId).forEach(po -> {
+            String pid = po.getProject().getId();
+            projectIds.add(pid);
+            roles.put(pid, ProjectRole.PRODUCT_OWNER);
+        });
+
+        projectScrumMasterRepository.findAllByUserId(userId).forEach(sm -> {
+            String pid = sm.getProject().getId();
+            projectIds.add(pid);
+            roles.put(pid, ProjectRole.SCRUM_MASTER);
+        });
+
+        // Ambil semua project ID yang diarsipkan oleh user
+        List<String> archivedProjectIds = userProjectArchiveRepository
+                .findAllByUserIdAndProject_IdIn(userId, projectIds)
+                .stream()
+                .map(archive -> archive.getProject().getId())
+                .toList();
+
+        if (archivedProjectIds.isEmpty()) {
+            return Page.empty(pageable); // Return kosong jika tidak ada yang diarsip
+        }
+
+        // Query hanya project yang diarsip dan cocok dengan keyword
+        Page<Project> archivedProjects = projectRepository
+                .findByIdInAndNameContainingIgnoreCase(archivedProjectIds, keyword, pageable);
+
+        // Mapping ke response
+        return archivedProjects.map(p -> ProjectSummaryResponse.builder()
+                .projectId(p.getId())
+                .name(p.getName())
+                .userRole(roles.get(p.getId()))
+                .build());
     }
 
     public ProjectSummaryResponse getProjectById(String projectId) {
@@ -383,19 +501,31 @@ public class ProjectUseCase {
         Map<String, ProjectRole> roles = new HashMap<>();
 
         for (ProjectDeveloper pd : devLinks) {
-            allProjectIds.add(pd.getProject().getId());
-            roles.put(pd.getProject().getId(), ProjectRole.DEVELOPER);
+            String pid = pd.getProject().getId();
+            allProjectIds.add(pid);
+            roles.put(pid, ProjectRole.DEVELOPER);
         }
 
         for (ProjectProductOwner po : ownerLinks) {
-            allProjectIds.add(po.getProject().getId());
-            roles.put(po.getProject().getId(), ProjectRole.PRODUCT_OWNER);
+            String pid = po.getProject().getId();
+            allProjectIds.add(pid);
+            roles.put(pid, ProjectRole.PRODUCT_OWNER);
         }
 
         for (ProjectScrumMaster sm : scrumLinks) {
-            allProjectIds.add(sm.getProject().getId());
-            roles.put(sm.getProject().getId(), ProjectRole.SCRUM_MASTER);
+            String pid = sm.getProject().getId();
+            allProjectIds.add(pid);
+            roles.put(pid, ProjectRole.SCRUM_MASTER);
         }
+
+        // Filter archived projects for this user
+        List<String> archivedProjectIds = userProjectArchiveRepository
+                .findAllByUserIdAndProject_IdIn(userId, allProjectIds)
+                .stream()
+                .map(archive -> archive.getProject().getId())
+                .toList();
+
+        allProjectIds.removeAll(archivedProjectIds);
 
         Page<Project> projects = projectRepository.findAllByIdIn(allProjectIds, pageable);
 
@@ -530,6 +660,132 @@ public class ProjectUseCase {
     public Optional<ProjectInvitation> getAnyExistingInvitation(String projectId, String userId) {
         return projectInvitationRepository
                 .findFirstByProjectIdAndInviteeIdAndStatus(projectId, userId, InvitationStatus.PENDING);
+    }
+
+    public ProjectSummaryResponse renameProject(RenameProjectRequest dto) {
+        try {
+            String requesterId = getCurrentUserId();
+            Project project = getProjectOrThrow(dto.getProjectId());
+
+            if (!isProductOwnerOrScrumMaster(dto.getProjectId(), requesterId)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Only a product owner or scrum master can rename this project");
+            }
+
+            project.setName(dto.getName());
+            Project saved = projectRepository.save(project);
+
+            return ProjectSummaryResponse.builder()
+                    .projectId(saved.getId())
+                    .name(saved.getName())
+                    .userRole(ProjectRole.PRODUCT_OWNER)
+                    .build();
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to delete project: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
+    public void deleteProject(String projectId) {
+        try {
+            String requesterId = getCurrentUserId();
+            Project project = getProjectOrThrow(projectId);
+
+            if (!isProductOwnerOrScrumMaster(projectId, requesterId)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Only a product owner or scrum master can delete this project");
+            }
+
+            List<ProductBacklog> backlogs = productBacklogRepository.findByProjectId(projectId);
+
+            backlogActivityLogRepository.deleteAllByBacklogIn(backlogs);
+
+            projectInvitationRepository.deleteByProjectId(projectId);
+            projectDeveloperRepository.deleteByProjectId(projectId);
+            projectProductOwnerRepository.deleteByProjectId(projectId);
+            projectScrumMasterRepository.deleteByProjectId(projectId);
+            productBacklogRepository.deleteByProjectId(projectId);
+            sprintRepository.deleteByProjectId(projectId);
+            productGoalRepository.deleteByProjectId(projectId);
+            userProjectArchiveRepository.deleteByUserIdAndProject_Id(requesterId, projectId);
+            projectRepository.delete(project);
+
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to delete project: " + e.getMessage(), e);
+        }
+    }
+
+    public void archiveProjectForUser(String projectId) {
+        String userId = getCurrentUserId();
+
+        boolean isMember = isUserAlreadyMember(projectId, userId);
+
+        if (!isMember) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not a member of this project");
+        }
+
+        boolean alreadyArchived = userProjectArchiveRepository.existsByUserIdAndProject_Id(userId, projectId);
+        if (alreadyArchived) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Project already archived");
+        }
+
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+
+        UserProjectArchive archive = UserProjectArchive.builder()
+                .userId(userId)
+                .project(project)
+                .archivedAt(LocalDateTime.now())
+                .build();
+
+        userProjectArchiveRepository.save(archive);
+    }
+
+    public void unarchiveProjectForUser(String projectId) {
+        String userId = getCurrentUserId();
+
+        boolean isMember = isUserAlreadyMember(projectId, userId);
+        if (!isMember) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not a member of this project");
+        }
+
+        UserProjectArchive archive = userProjectArchiveRepository
+                .findByUserIdAndProject_Id(userId, projectId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Project is not archived"));
+
+        userProjectArchiveRepository.delete(archive);
+    }
+
+    public Page<ProjectSummaryResponse> getArchivedProjectsForUser(Pageable pageable) {
+        String userId = getCurrentUserId();
+
+        Page<UserProjectArchive> archives = userProjectArchiveRepository.findAllByUserId(userId, pageable);
+
+        List<String> projectIds = archives.stream()
+                .map(archive -> archive.getProject().getId())
+                .toList();
+
+        Map<String, ProjectRole> roles = new HashMap<>();
+
+        projectDeveloperRepository.findAllByUserIdAndProject_IdIn(userId, projectIds)
+                .forEach(pd -> roles.put(pd.getProject().getId(), ProjectRole.DEVELOPER));
+
+        projectProductOwnerRepository.findAllByUserIdAndProject_IdIn(userId, projectIds)
+                .forEach(po -> roles.put(po.getProject().getId(), ProjectRole.PRODUCT_OWNER));
+
+        projectScrumMasterRepository.findAllByUserIdAndProject_IdIn(userId, projectIds)
+                .forEach(sm -> roles.put(sm.getProject().getId(), ProjectRole.SCRUM_MASTER));
+
+        return archives.map(archive -> {
+            Project project = archive.getProject();
+            return ProjectSummaryResponse.builder()
+                    .projectId(project.getId())
+                    .name(project.getName())
+                    .userRole(roles.get(project.getId()))
+                    .build();
+        });
     }
 
 }

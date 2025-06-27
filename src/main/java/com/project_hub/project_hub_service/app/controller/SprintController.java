@@ -21,10 +21,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.project_hub.project_hub_service.app.constants.ProductBacklogStatus;
 import com.project_hub.project_hub_service.app.dtos.req.CreateSprintRequest;
 import com.project_hub.project_hub_service.app.dtos.req.EditSprintGoalAndDatesRequest;
+import com.project_hub.project_hub_service.app.dtos.req.GetProductBacklogRequest;
 import com.project_hub.project_hub_service.app.dtos.res.CompleteSprintInfoResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintOverviewResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
+import com.project_hub.project_hub_service.app.dtos.res.TimelineSprintResponse;
 import com.project_hub.project_hub_service.app.dtos.res.UserTaskDistributionResponse;
 import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 import com.project_hub.project_hub_service.app.usecase.ProductBacklogUseCase;
@@ -64,15 +66,22 @@ public class SprintController {
                 return ResponseEntity.ok(baseResponse);
         }
 
-        @GetMapping("/{sprintId}/product_backlogs")
+        @PostMapping("/{sprintId}/product_backlogs")
         @Operation(summary = "Get paginated product backlog where the backlog is in sprint")
-        public ResponseEntity<BaseResponse<Page<ProductBacklogResponse>>> getBacklogsByProjectPaginated(
+        public ResponseEntity<BaseResponse<Page<ProductBacklogResponse>>> getBacklogsBySprintPaginatedWithFilter(
+                        @PathVariable String sprintId,
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(defaultValue = "10") int size,
-                        @PathVariable String sprintId) {
+                        @RequestBody(required = false) GetProductBacklogRequest request) {
+
                 Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
                 Page<ProductBacklogResponse> productBacklogs = productBacklogUseCase.getPaginatedBacklogsBySprintId(
                                 sprintId,
+                                request.getSearch(),
+                                request.getStatus(),
+                                request.getPriority(),
+                                request.getProductGoalIds(),
+                                request.getAssigneeIds(),
                                 pageable);
 
                 BaseResponse<Page<ProductBacklogResponse>> response = new BaseResponse<>(
@@ -173,6 +182,26 @@ public class SprintController {
                 Page<SprintResponse> results = sprintUseCase.searchSprint(projectId, keyword, pageable);
 
                 BaseResponse<Page<SprintResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Sprints retrieved successfully",
+                                results);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/search/timeline")
+        @Operation(summary = "Search sprints by name or sprint goal")
+        public ResponseEntity<BaseResponse<Page<TimelineSprintResponse>>> searchSprintsInTimeline(
+                        @RequestParam String projectId,
+                        @RequestParam String keyword,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<TimelineSprintResponse> results = sprintUseCase.searchSprintInTimeline(projectId, keyword,
+                                pageable);
+
+                BaseResponse<Page<TimelineSprintResponse>> response = new BaseResponse<>(
                                 "success",
                                 "Sprints retrieved successfully",
                                 results);

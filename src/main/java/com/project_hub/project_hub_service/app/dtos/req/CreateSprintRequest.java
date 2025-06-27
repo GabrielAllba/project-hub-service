@@ -14,6 +14,4 @@ public class CreateSprintRequest {
 
     @NotBlank
     private String projectId;
-    @NotBlank
-    private String name;
 }

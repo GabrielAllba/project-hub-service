@@ -10,6 +10,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,14 +26,16 @@ import com.project_hub.project_hub_service.app.dtos.req.AddProductOwnerRequest;
 import com.project_hub.project_hub_service.app.dtos.req.AddProjectDeveloperRequest;
 import com.project_hub.project_hub_service.app.dtos.req.AddScrumMasterRequest;
 import com.project_hub.project_hub_service.app.dtos.req.CreateProjectRequest;
+import com.project_hub.project_hub_service.app.dtos.req.GetProductBacklogRequest;
+import com.project_hub.project_hub_service.app.dtos.req.RenameProjectRequest;
 import com.project_hub.project_hub_service.app.dtos.res.ProductBacklogResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectBacklogSummaryResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectInvitationResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectSummaryResponse;
 import com.project_hub.project_hub_service.app.dtos.res.ProjectUserResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
+import com.project_hub.project_hub_service.app.dtos.res.TimelineSprintResponse;
 import com.project_hub.project_hub_service.app.dtos.res.UserWorkItemSummaryResponse;
-import com.project_hub.project_hub_service.app.entity.Project;
 import com.project_hub.project_hub_service.app.entity.ProjectInvitation;
 import com.project_hub.project_hub_service.app.usecase.ProductBacklogUseCase;
 import com.project_hub.project_hub_service.app.usecase.ProjectUseCase;
@@ -60,13 +63,50 @@ public class ProjectController {
 
         @PostMapping
         @Operation(summary = "Create a new project")
-        public ResponseEntity<BaseResponse<ProjectSummaryResponse>> createProject(@Validated @RequestBody CreateProjectRequest dto) {
+        public ResponseEntity<BaseResponse<ProjectSummaryResponse>> createProject(
+                        @Validated @RequestBody CreateProjectRequest dto) {
                 ProjectSummaryResponse project = projectUseCase.create(dto);
 
                 BaseResponse<ProjectSummaryResponse> response = new BaseResponse<>(
                                 "success",
                                 "Project created successfully",
                                 project);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/search")
+        @Operation(summary = "Search projects by name where the user is involved")
+        public ResponseEntity<BaseResponse<Page<ProjectSummaryResponse>>> searchProjects(
+                        @RequestParam String keyword,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<ProjectSummaryResponse> projects = projectUseCase.searchProjectsForUser(keyword, pageable);
+
+                BaseResponse<Page<ProjectSummaryResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Projects searched successfully",
+                                projects);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/search/archived")
+        @Operation(summary = "Search archived projects by name where the user is involved")
+        public ResponseEntity<BaseResponse<Page<ProjectSummaryResponse>>> searchArchivedProjects(
+                        @RequestParam String keyword,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+                Page<ProjectSummaryResponse> projects = projectUseCase.searchArchivedProjectsForUser(keyword, pageable);
+
+                BaseResponse<Page<ProjectSummaryResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Projects searched successfully",
+                                projects);
 
                 return ResponseEntity.ok(response);
         }
@@ -187,6 +227,7 @@ public class ProjectController {
                                 .role(invitation.getRole())
                                 .invitationId(invitation.getId())
                                 .projectId(invitation.getProject().getId())
+                                .projectName(invitation.getProject().getName())
                                 .inviteeId(invitation.getInviteeId())
                                 .inviterId(invitation.getInviterId())
                                 .invitedAt(invitation.getInvitedAt())
@@ -281,7 +322,7 @@ public class ProjectController {
 
         @GetMapping("/{projectId}/sprints/timeline")
         @Operation(summary = "Get paginated timeline sprints for a given project and year")
-        public ResponseEntity<BaseResponse<Page<SprintResponse>>> getProjectSprintsTimeline(
+        public ResponseEntity<BaseResponse<Page<TimelineSprintResponse>>> getProjectSprintsTimeline(
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(defaultValue = "10") int size,
                         @RequestParam int year, // 👈 NEW
@@ -289,28 +330,37 @@ public class ProjectController {
 
                 Pageable pageable = PageRequest.of(page, size, Sort.by("startDate").ascending());
 
-                Page<SprintResponse> sprints = sprintUseCase.getPaginatedSprintsTimelineByProjectIdAndYear(projectId,
+                Page<TimelineSprintResponse> sprints = sprintUseCase.getPaginatedSprintsTimelineByProjectIdAndYear(projectId,
                                 year, pageable);
 
                 return ResponseEntity.ok(
                                 new BaseResponse<>("success", "Sprints retrieved successfully", sprints));
         }
 
-        @GetMapping("/{projectId}/product_backlogs")
-        @Operation(summary = "Get paginated product backlog where the backlog is in project")
+        @PostMapping("/{projectId}/product_backlogs")
+        @Operation(summary = "Get paginated product backlog where the backlog is in project, with optional filters")
         public ResponseEntity<BaseResponse<Page<ProductBacklogResponse>>> getBacklogsByProjectPaginated(
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(defaultValue = "10") int size,
+                        @RequestBody GetProductBacklogRequest request,
                         @PathVariable String projectId) {
+
                 Pageable pageable = PageRequest.of(page, size);
+
                 Page<ProductBacklogResponse> productBacklogs = productBacklogUseCase.getPaginatedBacklogsByProjectId(
                                 projectId,
+                                request.getSearch(),
+                                request.getStatus(),
+                                request.getPriority(),
+                                request.getProductGoalIds(),
+                                request.getAssigneeIds(),
                                 pageable);
 
                 BaseResponse<Page<ProductBacklogResponse>> response = new BaseResponse<>(
                                 "success",
                                 "Product backlog retrieved successfully",
                                 productBacklogs);
+
                 return ResponseEntity.ok(response);
         }
 
@@ -368,6 +418,62 @@ public class ProjectController {
                                 .getWorkSummaryByTeamAndDateRange(projectId, range);
                 BaseResponse<List<UserWorkItemSummaryResponse>> response = new BaseResponse<>(
                                 "success", "User work summary retrieved", summary);
+                return ResponseEntity.ok(response);
+        }
+
+        @PutMapping("/rename")
+        @Operation(summary = "Edit name of the project")
+        public ResponseEntity<BaseResponse<ProjectSummaryResponse>> renameProject(
+                        @Validated @RequestBody RenameProjectRequest dto) {
+
+                ProjectSummaryResponse updatedProject = projectUseCase.renameProject(dto);
+
+                BaseResponse<ProjectSummaryResponse> response = new BaseResponse<>(
+                                "success",
+                                "Project name updated successfully",
+                                updatedProject);
+
+                return ResponseEntity.ok(response);
+        }
+
+        @Operation(summary = "Delete a project by ID")
+        @DeleteMapping("/{projectId}")
+        public ResponseEntity<BaseResponse<Void>> deleteProject(@PathVariable String projectId) {
+                projectUseCase.deleteProject(projectId);
+                BaseResponse<Void> response = new BaseResponse<>("success", "Project deleted successfully", null);
+                return ResponseEntity.ok(response);
+        }
+
+        @Operation(summary = "Archive a project for the current user")
+        @PostMapping("/{projectId}/archive")
+        public ResponseEntity<BaseResponse<Void>> archiveProject(@PathVariable String projectId) {
+                projectUseCase.archiveProjectForUser(projectId);
+                BaseResponse<Void> response = new BaseResponse<>("success", "Project archived successfully", null);
+                return ResponseEntity.ok(response);
+        }
+
+        @Operation(summary = "Unarchive a project for the current user")
+        @PostMapping("/{projectId}/unarchive")
+        public ResponseEntity<BaseResponse<Void>> unarchiveProject(@PathVariable String projectId) {
+                projectUseCase.unarchiveProjectForUser(projectId);
+                BaseResponse<Void> response = new BaseResponse<>("success", "Project archived successfully", null);
+                return ResponseEntity.ok(response);
+        }
+
+        @GetMapping("/archived")
+        @Operation(summary = "Get paginated archived projects for the current user")
+        public ResponseEntity<BaseResponse<Page<ProjectSummaryResponse>>> getArchivedProjects(
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+
+                Pageable pageable = PageRequest.of(page, size, Sort.by("archivedAt").descending());
+                Page<ProjectSummaryResponse> archivedProjects = projectUseCase.getArchivedProjectsForUser(pageable);
+
+                BaseResponse<Page<ProjectSummaryResponse>> response = new BaseResponse<>(
+                                "success",
+                                "Archived projects retrieved successfully",
+                                archivedProjects);
+
                 return ResponseEntity.ok(response);
         }
 

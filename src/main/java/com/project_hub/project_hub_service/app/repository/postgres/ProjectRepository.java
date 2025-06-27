@@ -13,4 +13,7 @@ import com.project_hub.project_hub_service.app.entity.Project;
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, String> {
     Page<Project> findAllByIdIn(Collection<String> ids, Pageable pageable);
+
+    Page<Project> findByIdInAndNameContainingIgnoreCase(List<String> ids, String keyword, Pageable pageable);
+
 }

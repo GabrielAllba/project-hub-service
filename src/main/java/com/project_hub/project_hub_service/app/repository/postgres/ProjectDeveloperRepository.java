@@ -1,5 +1,6 @@
 package com.project_hub.project_hub_service.app.repository.postgres;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,5 +20,10 @@ public interface ProjectDeveloperRepository extends JpaRepository<ProjectDevelop
     boolean existsByProjectIdAndUserId(String projectId, String userId);
 
     long countByProjectId(String projectId);
+
+    void deleteByProjectId(String projectId);
+
+    List<ProjectDeveloper> findAllByUserIdAndProject_IdIn(String userId, Collection<String> projectIds);
+
 
 }

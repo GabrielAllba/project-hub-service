@@ -4,9 +4,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -24,6 +26,7 @@ import com.project_hub.project_hub_service.app.dtos.req.EditSprintGoalAndDatesRe
 import com.project_hub.project_hub_service.app.dtos.res.CompleteSprintInfoResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintOverviewResponse;
 import com.project_hub.project_hub_service.app.dtos.res.SprintResponse;
+import com.project_hub.project_hub_service.app.dtos.res.TimelineSprintResponse;
 import com.project_hub.project_hub_service.app.dtos.res.UserTaskDistributionResponse;
 import com.project_hub.project_hub_service.app.entity.ProductBacklog;
 import com.project_hub.project_hub_service.app.entity.Project;
@@ -34,6 +37,8 @@ import com.project_hub.project_hub_service.app.repository.postgres.ProjectProduc
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.ProjectScrumMasterRepository;
 import com.project_hub.project_hub_service.app.repository.postgres.SprintRepository;
+
+import authenticationservice.AuthenticationServiceOuterClass.FindUserResponse;
 
 @Service
 public class SprintUseCase {
@@ -65,12 +70,46 @@ public class SprintUseCase {
 
                 if (!isUserAuthorized(project, requesterId)) {
                         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                                        "You are not authorized to create sprint, only the product owner & scrum master of this project  can create sprint.");
+                                        "You are not authorized to create sprint, only the product owner & scrum master of this project can create sprint.");
                 }
+
+                // --- Logic to determine the next sprint number ---
+                List<Sprint> existingSprints = sprintRepository.findByProjectId(project.getId());
+
+                int nextSprintNumber = 1; // Default for the very first sprint
+                if (!existingSprints.isEmpty()) {
+                        // Find the maximum sprint number used so far
+                        // We need to parse the "Sprint X" name to get the number
+                        Optional<Integer> maxNumber = existingSprints.stream()
+                                        .map(sprint -> {
+                                                String name = sprint.getName();
+                                                if (name != null && name.startsWith("Sprint ")) {
+                                                        try {
+                                                                return Integer.parseInt(
+                                                                                name.substring("Sprint ".length()));
+                                                        } catch (NumberFormatException e) {
+                                                                // Handle cases where sprint name might not be in
+                                                                // "Sprint X" format
+                                                                // or log a warning. For simplicity, we'll ignore
+                                                                // malformed names
+                                                                // for max number calculation.
+                                                                return 0; // Treat as 0 or some other indicator
+                                                        }
+                                                }
+                                                return 0; // If name doesn't start with "Sprint "
+                                        })
+                                        .max(Comparator.naturalOrder()); // Find the maximum number
+
+                        if (maxNumber.isPresent()) {
+                                nextSprintNumber = maxNumber.get() + 1;
+                        }
+                }
+                String sprintName = "Sprint " + nextSprintNumber;
+                // --- End of logic to determine the next sprint number ---
 
                 Sprint sprint = Sprint.builder()
                                 .project(project)
-                                .name(request.getName())
+                                .name(sprintName) // Set the determined sprint name
                                 .sprintGoal("")
                                 .status(SprintStatus.NOT_STARTED)
                                 .build();
@@ -167,8 +206,14 @@ public class SprintUseCase {
                                 .build());
         }
 
-        public Page<SprintResponse> getPaginatedSprintsTimelineByProjectIdAndYear(String projectId, int year,
+        public Page<TimelineSprintResponse> getPaginatedSprintsTimelineByProjectIdAndYear(String projectId, int year,
                         Pageable pageable) {
+
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                String requesterId = authentication.getPrincipal().toString();
+
+                FindUserResponse user = findUserOrThrow(requesterId);
+
                 if (!projectRepository.existsById(projectId)) {
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found");
                 }
@@ -180,18 +225,27 @@ public class SprintUseCase {
                                 pageable);
 
                 DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE;
-                return sprintPage.map(sprint -> SprintResponse.builder()
-                                .id(sprint.getId())
-                                .projectId(sprint.getProject().getId())
-                                .name(sprint.getName())
-                                .startDate(sprint.getStartDate() != null ? sprint.getStartDate().format(formatter)
-                                                : null)
-                                .endDate(sprint.getEndDate() != null ? sprint.getEndDate().format(formatter) : null)
-                                .createdAt(sprint.getCreatedAt().toString())
-                                .updatedAt(sprint.getUpdatedAt().toString())
-                                .sprintGoal(sprint.getSprintGoal())
-                                .status(sprint.getStatus().toString())
-                                .build());
+                return sprintPage.map(sprint -> {
+                        int taskCount = productBacklogRepository.countBySprintIdAndAssigneeId(sprint.getId(),
+                                        user.getId());
+
+                        return TimelineSprintResponse.builder()
+                                        .id(sprint.getId())
+                                        .projectId(sprint.getProject().getId())
+                                        .name(sprint.getName())
+                                        .startDate(sprint.getStartDate() != null
+                                                        ? sprint.getStartDate().format(formatter)
+                                                        : null)
+                                        .endDate(sprint.getEndDate() != null ? sprint.getEndDate().format(formatter)
+                                                        : null)
+                                        .createdAt(sprint.getCreatedAt().toString())
+                                        .updatedAt(sprint.getUpdatedAt().toString())
+                                        .sprintGoal(sprint.getSprintGoal())
+                                        .status(sprint.getStatus().toString())
+                                        .userTask(taskCount)
+                                        .build();
+                });
+
         }
 
         public Page<SprintResponse> getPaginatedInProgressSprintsByProjectId(String projectId, Pageable pageable) {
@@ -289,23 +343,31 @@ public class SprintUseCase {
                                         "You are not authorized to start this sprint, only the product owner & scrum master of this project can start this sprint.");
                 }
 
+                LocalDateTime now = LocalDateTime.now();
+
+                // ⛔ Throw error if now is after existing end date
+                if (sprint.getEndDate() != null && now.isAfter(sprint.getEndDate())) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                        "Cannot start sprint because the end date is already in the past.");
+                }
+
                 sprint.setStatus(SprintStatus.IN_PROGRESS);
-                sprint.setStartDate(LocalDateTime.now());
+                sprint.setStartDate(now);
 
                 Sprint saved = sprintRepository.save(sprint);
 
                 DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE;
 
                 return SprintResponse.builder()
-                                .id(saved.getId().toString())
-                                .projectId(saved.getProject().getId().toString())
+                                .id(saved.getId())
+                                .projectId(saved.getProject().getId())
                                 .name(saved.getName())
+                                .sprintGoal(saved.getSprintGoal())
+                                .status(saved.getStatus().toString())
                                 .startDate(saved.getStartDate() != null ? saved.getStartDate().format(formatter) : null)
                                 .endDate(saved.getEndDate() != null ? saved.getEndDate().format(formatter) : null)
                                 .createdAt(saved.getCreatedAt().toString())
                                 .updatedAt(saved.getUpdatedAt().toString())
-                                .sprintGoal(saved.getSprintGoal())
-                                .status(saved.getStatus().toString())
                                 .build();
         }
 
@@ -351,8 +413,16 @@ public class SprintUseCase {
                                         "You are not authorized to complete this sprint, only the product owner & scrum master of this project can complete this sprint.");
                 }
 
+                LocalDateTime now = LocalDateTime.now();
+
+                // ⛔ Throw error if now is after existing end date
+                if (now.isBefore(sprint.getStartDate())) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                        "Cannot complete sprint because now is before the start date.");
+                }
+
                 sprint.setStatus(SprintStatus.COMPLETED);
-                sprint.setEndDate(LocalDateTime.now());
+                sprint.setEndDate(now);
 
                 Sprint saved = sprintRepository.save(sprint);
 
@@ -390,6 +460,40 @@ public class SprintUseCase {
                                 .createdAt(sprint.getCreatedAt().toString())
                                 .updatedAt(sprint.getUpdatedAt().toString())
                                 .build());
+        }
+
+        public Page<TimelineSprintResponse> searchSprintInTimeline(String projectId, String keyword,
+                        Pageable pageable) {
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                String requesterId = authentication.getPrincipal().toString();
+
+                FindUserResponse user = findUserOrThrow(requesterId);
+
+                Page<Sprint> sprints = sprintRepository.findSprintsInTimelineWithStartAndEndDate(projectId, keyword,
+                                pageable);
+
+                DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE;
+
+                return sprints.map(sprint -> {
+                        int taskCount = productBacklogRepository.countBySprintIdAndAssigneeId(sprint.getId(),
+                                        user.getId());
+
+                        return TimelineSprintResponse.builder()
+                                        .id(sprint.getId())
+                                        .projectId(sprint.getProject().getId())
+                                        .name(sprint.getName())
+                                        .sprintGoal(sprint.getSprintGoal())
+                                        .status(sprint.getStatus().toString())
+                                        .startDate(sprint.getStartDate() != null
+                                                        ? sprint.getStartDate().format(formatter)
+                                                        : null)
+                                        .endDate(sprint.getEndDate() != null ? sprint.getEndDate().format(formatter)
+                                                        : null)
+                                        .createdAt(sprint.getCreatedAt().toString())
+                                        .updatedAt(sprint.getUpdatedAt().toString())
+                                        .userTask(taskCount)
+                                        .build();
+                });
         }
 
         public SprintOverviewResponse getSprintOverview(String sprintId) {
@@ -447,6 +551,15 @@ public class SprintUseCase {
                 }
 
                 return new ArrayList<>(distributionMap.values());
+        }
+
+        private FindUserResponse findUserOrThrow(String userId) {
+                try {
+                        return authenticationGrpcRepository.findUser(userId);
+                } catch (Exception e) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                        "User with id " + userId + " not found");
+                }
         }
 
 }
