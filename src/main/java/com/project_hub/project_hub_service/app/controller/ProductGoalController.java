@@ -106,7 +106,7 @@ public class ProductGoalController {
 
     @GetMapping("/{productGoalId}")
     @Operation(summary = "Get a product goal by ID")
-    public ResponseEntity<BaseResponse<ProductGoalResponse>> getSprintById(@PathVariable String productGoalId) {
+    public ResponseEntity<BaseResponse<ProductGoalResponse>> getProductGoalById(@PathVariable String productGoalId) {
         ProductGoalResponse productGoal = productGoalUseCase.getProductGoalById(productGoalId);
 
         BaseResponse<ProductGoalResponse> response = new BaseResponse<>(
